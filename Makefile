@@ -1,4 +1,4 @@
-.PHONY: all build run test vet lint clean
+.PHONY: all build run dev test vet lint clean
 
 BINARY_NAME=sentinela
 
@@ -10,6 +10,9 @@ build:
 run:
 	go run ./cmd/sentinela -config config.example.yaml
 
+dev:
+	air
+
 test:
 	go test -v -race ./...
 
@@ -17,4 +20,4 @@ vet:
 	go vet ./...
 
 clean:
-	rm -rf bin/ data/
+	rm -rf bin/ tmp/ data/
