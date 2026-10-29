@@ -298,7 +298,10 @@ button, input {
   gap: var(--sp-3);
   overflow: hidden;
   cursor: pointer;
-  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), border-color var(--dur-base) var(--ease-out);
+  transition: transform var(--dur-fast) var(--ease-out),
+              box-shadow 300ms ease,
+              border-color 300ms ease,
+              background 300ms ease;
   text-decoration: none;
 }
 
@@ -897,8 +900,8 @@ button, input {
 }
 
 @keyframes flash-change {
-  0% { background-color: var(--flash-color, var(--surface)); }
-  100% { background-color: var(--surface); }
+  0% { filter: brightness(1.2); }
+  100% { filter: brightness(1); }
 }
 
 @keyframes skeleton-shimmer {
@@ -906,8 +909,8 @@ button, input {
   100% { background-position: -200% 0; }
 }
 
-/* Staggered entry animation */
-.card {
+/* Staggered entry animation ONLY on initial skeleton load */
+.card--skeleton {
   animation: card-enter var(--dur-slow) var(--ease-out) backwards;
   animation-delay: calc(var(--i, 0) * 30ms);
 }
