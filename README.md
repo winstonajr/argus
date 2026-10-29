@@ -25,16 +25,18 @@ Para cada sistema configurado, o **Sentinela** verifica de forma independente:
 
 ### 2. Rodando Localmente
 ```bash
-# Modo desenvolvimento com Live Reload (Air):
-make dev
+# Executar diretamente com Go:
+go run ./cmd/sentinela -config config.example.yaml
 
-# Compilar e executar normalmente:
-make run
+# Ou em modo desenvolvimento com Live Reload (Air):
+air
 
-# Ou compilar o binário em bin/sentinela:
-make build
+# Ou compilar o binário estático:
+go build -o bin/sentinela ./cmd/sentinela
 ./bin/sentinela -config config.example.yaml
 ```
+
+*(Opcional: se preferir usar atalhos, o `Makefile` inclui `make run`, `make dev` e `make build`).*
 
 Acesse no navegador:
 👉 **http://localhost:8080**
@@ -120,9 +122,11 @@ systems:
 O projeto segue padrões rígidos de qualidade (verificação estática, detecção de race conditions e cobertura de testes):
 
 ```bash
-# Rodar todos os testes unitários com race detector:
-make test
+# Executar todos os testes com detector de concorrência:
+go test -v -race ./...
 
-# Rodar verificação estática do Go:
-make vet
+# Executar verificação estática do Go:
+go vet ./...
 ```
+
+*(Opcional: também disponíveis via `make test` e `make vet`).*
