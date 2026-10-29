@@ -1,0 +1,229 @@
+package config
+
+import (
+	"errors"
+	"fmt"
+	"net"
+	"net/url"
+	"os"
+	"regexp"
+	"strings"
+	"time"
+
+	"gopkg.in/yaml.v3"
+)
+
+var idRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+// Config defines the top-level configuration for Sentinela.
+type Config struct {
+	Server   ServerConfig   `yaml:"server"`
+	Storage  StorageConfig  `yaml:"storage"`
+	Defaults DefaultsConfig `yaml:"defaults"`
+	Systems  []SystemConfig `yaml:"systems"`
+}
+
+// ServerConfig holds HTTP server parameters.
+type ServerConfig struct {
+	Addr string `yaml:"addr"`
+}
+
+// StorageConfig holds SQLite storage parameters and retention settings.
+type StorageConfig struct {
+	Path            string        `yaml:"path"`
+	RetentionChecks time.Duration `yaml:"retention_checks"`
+	RetentionEvents time.Duration `yaml:"retention_events"`
+}
+
+// DefaultsConfig contains fallback values for system checkers.
+type DefaultsConfig struct {
+	Interval        time.Duration `yaml:"interval"`
+	HTTPTimeout     time.Duration `yaml:"http_timeout"`
+	PingTimeout     time.Duration `yaml:"ping_timeout"`
+	FailThreshold   int           `yaml:"fail_threshold"`
+	DegradedLatency time.Duration `yaml:"degraded_latency"`
+}
+
+// SystemConfig represents one monitored system target.
+type SystemConfig struct {
+	ID                 string        `yaml:"id"`
+	Name               string        `yaml:"name"`
+	URL                string        `yaml:"url"`
+	HealthPath         string        `yaml:"health_path"`
+	ExpectedStatus     []int         `yaml:"expected_status"`
+	IP                 string        `yaml:"ip"`
+	TCPPort            int           `yaml:"tcp_port"`
+	Interval           time.Duration `yaml:"interval"`
+	HTTPTimeout        time.Duration `yaml:"http_timeout"`
+	PingTimeout        time.Duration `yaml:"ping_timeout"`
+	FailThreshold      int           `yaml:"fail_threshold"`
+	InsecureSkipVerify bool          `yaml:"insecure_skip_verify"`
+}
+
+// EffectiveInterval returns system specific interval or default.
+func (s *SystemConfig) EffectiveInterval(d DefaultsConfig) time.Duration {
+	if s.Interval > 0 {
+		return s.Interval
+	}
+	return d.Interval
+}
+
+// EffectiveHTTPTimeout returns system specific timeout or default.
+func (s *SystemConfig) EffectiveHTTPTimeout(d DefaultsConfig) time.Duration {
+	if s.HTTPTimeout > 0 {
+		return s.HTTPTimeout
+	}
+	return d.HTTPTimeout
+}
+
+// EffectivePingTimeout returns system specific ping timeout or default.
+func (s *SystemConfig) EffectivePingTimeout(d DefaultsConfig) time.Duration {
+	if s.PingTimeout > 0 {
+		return s.PingTimeout
+	}
+	return d.PingTimeout
+}
+
+// EffectiveFailThreshold returns system specific threshold or default.
+func (s *SystemConfig) EffectiveFailThreshold(d DefaultsConfig) int {
+	if s.FailThreshold > 0 {
+		return s.FailThreshold
+	}
+	return d.FailThreshold
+}
+
+// Load reads and parses configuration from a YAML file.
+func Load(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read config file %q: %w", path, err)
+	}
+
+	cfg := DefaultConfig()
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("parse config yaml %q: %w", path, err)
+	}
+
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("validate config: %w", err)
+	}
+
+	return cfg, nil
+}
+
+// DefaultConfig provides sensible defaults.
+func DefaultConfig() *Config {
+	return &Config{
+		Server: ServerConfig{
+			Addr: ":8080",
+		},
+		Storage: StorageConfig{
+			Path:            "./data/sentinela.db",
+			RetentionChecks: 168 * time.Hour,  // 7 days
+			RetentionEvents: 2160 * time.Hour, // 90 days
+		},
+		Defaults: DefaultsConfig{
+			Interval:        30 * time.Second,
+			HTTPTimeout:     5 * time.Second,
+			PingTimeout:     3 * time.Second,
+			FailThreshold:   2,
+			DegradedLatency: 2 * time.Second,
+		},
+		Systems: []SystemConfig{},
+	}
+}
+
+// Validate ensures configuration invariants are met.
+func (c *Config) Validate() error {
+	if strings.TrimSpace(c.Server.Addr) == "" {
+		return errors.New("server.addr cannot be empty")
+	}
+
+	if strings.TrimSpace(c.Storage.Path) == "" {
+		return errors.New("storage.path cannot be empty")
+	}
+
+	if c.Defaults.Interval < 10*time.Second {
+		return fmt.Errorf("defaults.interval must be at least 10s (got %v)", c.Defaults.Interval)
+	}
+	if c.Defaults.HTTPTimeout <= 0 {
+		return errors.New("defaults.http_timeout must be positive")
+	}
+	if c.Defaults.PingTimeout <= 0 {
+		return errors.New("defaults.ping_timeout must be positive")
+	}
+	if c.Defaults.FailThreshold < 1 {
+		return errors.New("defaults.fail_threshold must be >= 1")
+	}
+
+	if len(c.Systems) == 0 {
+		return errors.New("at least one system must be configured in systems list")
+	}
+
+	seenIDs := make(map[string]bool)
+
+	for i := range c.Systems {
+		sys := &c.Systems[i]
+
+		sys.ID = strings.TrimSpace(sys.ID)
+		if sys.ID == "" {
+			return fmt.Errorf("systems[%d].id is required", i)
+		}
+		if !idRegex.MatchString(sys.ID) {
+			return fmt.Errorf("systems[%d].id %q is invalid (use letters, numbers, hyphens, underscores)", i, sys.ID)
+		}
+		if seenIDs[sys.ID] {
+			return fmt.Errorf("duplicate system id: %q", sys.ID)
+		}
+		seenIDs[sys.ID] = true
+
+		if strings.TrimSpace(sys.Name) == "" {
+			sys.Name = sys.ID
+		}
+
+		sys.URL = strings.TrimSpace(sys.URL)
+		sys.IP = strings.TrimSpace(sys.IP)
+
+		if sys.URL == "" && sys.IP == "" {
+			return fmt.Errorf("system %q must have at least 'url' or 'ip'", sys.ID)
+		}
+
+		if sys.URL != "" {
+			u, err := url.ParseRequestURI(sys.URL)
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+				return fmt.Errorf("system %q has invalid url %q (must be http:// or https://)", sys.ID, sys.URL)
+			}
+		}
+
+		if sys.HealthPath != "" {
+			if !strings.HasPrefix(sys.HealthPath, "/") {
+				return fmt.Errorf("system %q health_path %q must start with '/'", sys.ID, sys.HealthPath)
+			}
+		}
+
+		if sys.IP != "" {
+			if parsedIP := net.ParseIP(sys.IP); parsedIP == nil {
+				return fmt.Errorf("system %q has invalid ip %q", sys.ID, sys.IP)
+			}
+		}
+
+		if sys.TCPPort != 0 {
+			if sys.TCPPort < 1 || sys.TCPPort > 65535 {
+				return fmt.Errorf("system %q tcp_port %d must be between 1 and 65535", sys.ID, sys.TCPPort)
+			}
+			if sys.IP == "" {
+				return fmt.Errorf("system %q tcp_port specified but no ip configured", sys.ID)
+			}
+		}
+
+		if sys.Interval > 0 && sys.Interval < 10*time.Second {
+			return fmt.Errorf("system %q interval %v must be at least 10s", sys.ID, sys.Interval)
+		}
+
+		if sys.FailThreshold < 0 {
+			return fmt.Errorf("system %q fail_threshold cannot be negative", sys.ID)
+		}
+	}
+
+	return nil
+}

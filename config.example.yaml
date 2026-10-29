@@ -1,0 +1,36 @@
+server:
+  addr: ":8080"
+
+storage:
+  path: "./data/sentinela.db"
+  retention_checks: 168h   # 7 dias
+  retention_events: 2160h  # 90 dias
+
+defaults:
+  interval: 30s
+  http_timeout: 5s
+  ping_timeout: 3s
+  fail_threshold: 2
+  degraded_latency: 2s
+
+systems:
+  - id: "erp"
+    name: "ERP Corporativo"
+    url: "https://erp.empresa.local/health"
+    health_path: "/health"
+    ip: "10.0.0.15"
+
+  - id: "portal"
+    name: "Portal do Cliente"
+    url: "https://portal.empresa.local"
+    ip: "10.0.0.22"
+
+  - id: "legado"
+    name: "Sistema Legado"
+    ip: "10.0.1.5"
+    tcp_port: 22
+
+  - id: "cloudflare-mock"
+    name: "Edge API Gateway"
+    url: "https://api.empresa.local"
+    ip: "1.1.1.1"
