@@ -1,0 +1,123 @@
+<a id="card-{{.ID}}"
+   class="card card--{{.WorstStatusLower}} {{if .JustChanged}}just-changed{{end}}"
+   data-system-id="{{.ID}}"
+   data-name="{{.Name}}"
+   data-status="{{.WorstStatusLower}}"
+   href="/systems/{{.ID}}/history"
+   hx-get="/cards/{{.ID}}"
+   hx-trigger="every 15s"
+   hx-swap="outerHTML settle:200ms">
+
+  <div class="card__progress">
+    <div class="card__progress-bar"></div>
+  </div>
+
+  <div class="card__header">
+    <span class="card__title">{{.Name}}</span>
+    {{if eq .WorstStatus "UP"}}
+      <span class="pill pill--up"><span class="dot"></span><svg class="icon"><use href="#icon-up"></use></svg> Operacional</span>
+    {{else if eq .WorstStatus "DEGRADED"}}
+      <span class="pill pill--degraded"><span class="dot"></span><svg class="icon"><use href="#icon-degraded"></use></svg> Instável</span>
+    {{else if eq .WorstStatus "DOWN"}}
+      <span class="pill pill--down"><span class="dot"></span><svg class="icon"><use href="#icon-down"></use></svg> Fora do ar</span>
+    {{else}}
+      <span class="pill pill--unknown"><span class="dot"></span><svg class="icon"><use href="#icon-unknown"></use></svg> Sem dados</span>
+    {{end}}
+  </div>
+
+  <div class="card__checks">
+    <!-- DNS / HTTP Row -->
+    <div class="check-row">
+      <span class="check-row__label">
+        <span class="check-row__badge">DNS</span>
+        {{if .DNS.Configured}}
+          <span class="check-row__target" title="{{.URL}}">{{.DisplayURL}}</span>
+        {{else}}
+          <span class="mono" style="color:var(--text-subtle);">não configurado</span>
+        {{end}}
+      </span>
+
+      <span class="check-row__status">
+        {{if .DNS.Configured}}
+          {{if .DNS.HasHistory}}
+            <span class="status-dot status-dot--{{.DNSStatusLower}}"></span>
+            {{if .DNS.LastResult.OK}}
+              <span class="mono">{{.DNSLatencyMs}} ms</span>
+            {{else}}
+              <span class="check-row__error" title="{{.DNS.LastResult.Error}}">
+                {{if .DNS.LastResult.StatusCode}}{{.DNS.LastResult.StatusCode}}{{else}}falha{{end}}
+              </span>
+            {{end}}
+          {{else}}
+            <span class="mono" style="color:var(--text-subtle);">aguardando...</span>
+          {{end}}
+        {{else}}
+          <span class="mono" style="color:var(--text-subtle);">—</span>
+        {{end}}
+      </span>
+    </div>
+
+    <!-- IP / ICMP Row -->
+    <div class="check-row">
+      <span class="check-row__label">
+        <span class="check-row__badge">IP</span>
+        {{if .IPCheck.Configured}}
+          <span class="check-row__target">{{.IP}}{{if .TCPPort}}:{{.TCPPort}}{{end}}</span>
+        {{else}}
+          <span class="mono" style="color:var(--text-subtle);">não configurado</span>
+        {{end}}
+      </span>
+
+      <span class="check-row__status">
+        {{if .IPCheck.Configured}}
+          {{if .IPCheck.HasHistory}}
+            <span class="status-dot status-dot--{{.IPStatusLower}}"></span>
+            {{if .IPCheck.LastResult.OK}}
+              <span class="mono">{{.IPLatencyMs}} ms</span>
+              {{if gt .IPCheck.LastResult.Loss 0.0}}
+                <span class="check-row__error">{{printf "%.0f%%" .IPCheck.LastResult.Loss}}</span>
+              {{end}}
+            {{else}}
+              <span class="check-row__error" title="{{.IPCheck.LastResult.Error}}">
+                {{if eq .IPCheck.LastResult.ErrorCat "permission"}}sem permissão{{else}}timeout{{end}}
+              </span>
+            {{end}}
+          {{else}}
+            <span class="mono" style="color:var(--text-subtle);">aguardando...</span>
+          {{end}}
+        {{else}}
+          <span class="mono" style="color:var(--text-subtle);">—</span>
+        {{end}}
+      </span>
+    </div>
+  </div>
+
+  <!-- Heartbeat Bar (30 ticks) -->
+  <div class="heartbeat" title="Histórico recente de verificações (1h)">
+    {{range .Heartbeat}}
+      <span class="heartbeat__tick heartbeat__tick--{{.StatusLower}}" data-tip="{{.Tooltip}}"></span>
+    {{end}}
+  </div>
+
+  <!-- Diagnosis Box when not UP -->
+  {{if and (ne .WorstStatus "UP") (ne .WorstStatus "UNKNOWN")}}
+  <div class="card__diagnosis card__diagnosis--{{.WorstStatusLower}}">
+    <svg class="icon" style="width:14px;height:14px;">
+      {{if eq .WorstStatus "DOWN"}}<use href="#icon-down"></use>{{else}}<use href="#icon-degraded"></use>{{end}}
+    </svg>
+    <span>
+      <strong>{{.Diagnosis}}</strong>
+      {{if .DownDurationStr}}· há {{.DownDurationStr}}{{end}}
+    </span>
+  </div>
+  {{end}}
+
+  <div class="card__footer">
+    <span class="mono" title="{{.LastCheckedFormatted}}">
+      {{if .LastCheckedFormatted}}Última consulta: {{.LastCheckedTimeOnly}}{{else}}Aguardando...{{end}}
+    </span>
+    <span class="card__footer-uptime">
+      Uptime 1h: <strong>{{printf "%.1f%%" .DNS.Uptime1h}}</strong>
+    </span>
+  </div>
+</a>

@@ -1,0 +1,150 @@
+{{define "content"}}
+<main class="main-container">
+  <div class="history-header">
+    <div class="history-topbar">
+      <a href="/" class="back-link">
+        <svg class="icon"><use href="#icon-arrow-left"></use></svg>
+        <span>Voltar ao painel principal</span>
+      </a>
+
+      <div class="period-buttons">
+        <a href="?period=1h" class="period-btn {{if eq .Period "1h"}}active{{end}}">Última 1h</a>
+        <a href="?period=24h" class="period-btn {{if eq .Period "24h"}}active{{end}}">Últimas 24h</a>
+        <a href="?period=7d" class="period-btn {{if eq .Period "7d"}}active{{end}}">Últimos 7 dias</a>
+      </div>
+    </div>
+
+    <div class="history-title-group">
+      <h1 class="history-title">{{.System.Name}}</h1>
+      <span class="mono" style="color:var(--text-muted);">{{.System.ID}}</span>
+    </div>
+
+    <!-- Summary Metrics -->
+    <div class="metrics-row">
+      <div class="metric-card">
+        <div class="metric-card__label">Uptime DNS/HTTP</div>
+        <div class="metric-card__value" style="color:var(--status-up);">{{printf "%.2f%%" .Stats.DNSUptime}}</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-card__label">Uptime IP/Host</div>
+        <div class="metric-card__value" style="color:var(--status-up);">{{printf "%.2f%%" .Stats.IPUptime}}</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-card__label">Incidentes Registrados</div>
+        <div class="metric-card__value">{{.Stats.IncidentCount}}</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-card__label">Alvo Configurado</div>
+        <div class="mono" style="font-size:var(--fs-sm); margin-top:6px; color:var(--text-muted);">
+          {{if .System.URL}}{{.System.URL}}{{end}}
+          {{if and .System.URL .System.IP}} · {{end}}
+          {{if .System.IP}}{{.System.IP}}{{end}}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Visual Timeline Bar -->
+  <section class="timeline-section">
+    <div class="section-title">Linha do Tempo ({{.PeriodLabel}})</div>
+
+    <div class="timeline-row">
+      <div class="timeline-label">
+        <span>DNS / Aplicação</span>
+        <span class="mono">{{printf "%.1f%%" .Stats.DNSUptime}} operacional</span>
+      </div>
+      <div class="timeline-bar">
+        {{range .Buckets}}
+          <span class="timeline-block timeline-block--{{.DNSStatusLower}}"
+                data-tip="{{.TimeFormatted}}: DNS {{.DNSStatus}}"></span>
+        {{end}}
+      </div>
+    </div>
+
+    <div class="timeline-row">
+      <div class="timeline-label">
+        <span>IP / Máquina</span>
+        <span class="mono">{{printf "%.1f%%" .Stats.IPUptime}} operacional</span>
+      </div>
+      <div class="timeline-bar">
+        {{range .Buckets}}
+          <span class="timeline-block timeline-block--{{.IPStatusLower}}"
+                data-tip="{{.TimeFormatted}}: IP {{.IPStatus}}"></span>
+        {{end}}
+      </div>
+    </div>
+  </section>
+
+  <!-- Incident Log -->
+  <section class="events-section">
+    <h2 class="section-title">Histórico de Incidentes e Mudanças de Estado</h2>
+
+    {{if .Events}}
+    <div class="events-list">
+      {{range .Events}}
+      <div class="event-item">
+        <div class="event-item__time">{{.OccurredAtFormatted}}</div>
+        <div class="event-item__body">
+          <span class="check-row__badge">{{.Kind}}</span>
+          <span class="pill pill--{{.ToStatusLower}}">
+            <span class="dot"></span>
+            {{.FromStatus}} → {{.ToStatus}}
+          </span>
+          <strong>{{.Diagnosis}}</strong>
+          {{if .Detail}}<span style="color:var(--text-muted);">— {{.Detail}}</span>{{end}}
+        </div>
+        {{if .DurationStr}}
+          <div class="mono" style="font-size:var(--fs-xs); color:var(--text-muted);">
+            Duração: {{.DurationStr}}
+          </div>
+        {{end}}
+      </div>
+      {{end}}
+    </div>
+    {{else}}
+      <div style="padding:var(--sp-4); text-align:center; color:var(--text-muted);">
+        Nenhum incidente registrado no período selecionado. O sistema operou com 100% de estabilidade.
+      </div>
+    {{end}}
+  </section>
+
+  <!-- Failed Checks Log -->
+  <section class="checks-section">
+    <h2 class="section-title">Verificações com Falha</h2>
+
+    {{if .FailedChecks}}
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Horário</th>
+            <th>Tipo</th>
+            <th>Categoria</th>
+            <th>Código / Latência</th>
+            <th>Mensagem de Erro</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .FailedChecks}}
+          <tr>
+            <td class="mono" style="font-size:var(--fs-xs);">{{.CheckedAtFormatted}}</td>
+            <td><span class="check-row__badge">{{.Kind}}</span></td>
+            <td><span class="mono" style="color:var(--status-down);">{{.ErrorCat}}</span></td>
+            <td class="mono">{{if .StatusCode}}{{.StatusCode}}{{else}}{{if .LatencyMs}}{{.LatencyMs}} ms{{else}}—{{end}}{{end}}</td>
+            <td style="color:var(--text-muted);">{{.ErrorMsg}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+      <div style="padding:var(--sp-4); text-align:center; color:var(--text-muted);">
+        Nenhuma verificação com falha gravada no período.
+      </div>
+    {{end}}
+  </section>
+</main>
+{{end}}

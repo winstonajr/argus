@@ -1,0 +1,42 @@
+{{define "content"}}
+<div id="stats-container" hx-get="/stats" hx-trigger="load, every 15s" hx-swap="innerHTML">
+  <!-- Stats bar loads here independently -->
+  <div class="stats-bar" style="opacity: 0.5;">
+    <div class="stats-grid">
+      <span class="mono">Carregando métricas da sentinela...</span>
+    </div>
+  </div>
+</div>
+
+<main class="main-container">
+  <div class="cards-grid" id="cards-grid">
+    {{range $idx, $sys := .Systems}}
+    <a id="card-{{$sys.ID}}"
+       class="card card--skeleton"
+       data-system-id="{{$sys.ID}}"
+       data-name="{{$sys.Name}}"
+       data-status="unknown"
+       style="--i: {{$idx}}"
+       href="/systems/{{$sys.ID}}/history"
+       hx-get="/cards/{{$sys.ID}}"
+       hx-trigger="load, every 15s"
+       hx-swap="outerHTML settle:200ms">
+      <div class="card__header">
+        <span class="card__title">{{$sys.Name}}</span>
+        <span class="pill pill--unknown"><span class="dot"></span> Carregando...</span>
+      </div>
+      <div class="card__checks">
+        <div class="check-row">
+          <span class="check-row__label"><span class="check-row__badge">DNS</span> {{$sys.URL}}</span>
+          <span class="mono">—</span>
+        </div>
+        <div class="check-row">
+          <span class="check-row__label"><span class="check-row__badge">IP</span> {{$sys.IP}}</span>
+          <span class="mono">—</span>
+        </div>
+      </div>
+    </a>
+    {{end}}
+  </div>
+</main>
+{{end}}

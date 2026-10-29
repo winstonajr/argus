@@ -1,0 +1,28 @@
+<div class="stats-bar">
+  <div class="stats-grid">
+    <div class="stat-item stat-item--up">
+      <span class="stat-item__value mono">{{.UpCount}}</span>
+      <span class="stat-item__label">Operacionais</span>
+    </div>
+
+    <div class="stat-item stat-item--degraded">
+      <span class="stat-item__value mono">{{.DegradedCount}}</span>
+      <span class="stat-item__label">Instáveis</span>
+    </div>
+
+    <div class="stat-item stat-item--down">
+      <span class="stat-item__value mono" id="stat-down-val">{{.DownCount}}</span>
+      <span class="stat-item__label">Fora do ar</span>
+    </div>
+
+    <div class="stat-item stat-item--total">
+      <span class="stat-item__value mono">{{.Total}}</span>
+      <span class="stat-item__label">Total Monitorado</span>
+    </div>
+  </div>
+
+  <div class="stats-meta">
+    <span>Último ciclo: <strong class="mono">{{.LastCheckFormatted}}</strong></span>
+    <span>Uptime Sentinela: <strong class="mono">{{.UptimeDurationFormatted}}</strong></span>
+  </div>
+</div>
