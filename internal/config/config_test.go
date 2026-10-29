@@ -1,0 +1,179 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func TestLoad_ValidConfig(t *testing.T) {
+	yamlContent := `
+server:
+  addr: ":9090"
+storage:
+  path: "./test.db"
+defaults:
+  interval: 20s
+systems:
+  - id: erp
+    name: "ERP System"
+    url: "https://erp.example.com"
+    health_path: "/healthz"
+    ip: "192.168.1.10"
+  - id: portal
+    ip: "10.0.0.1"
+    tcp_port: 80
+`
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("expected valid load, got error: %v", err)
+	}
+
+	if cfg.Server.Addr != ":9090" {
+		t.Errorf("expected addr :9090, got %s", cfg.Server.Addr)
+	}
+	if cfg.Defaults.Interval != 20*time.Second {
+		t.Errorf("expected default interval 20s, got %v", cfg.Defaults.Interval)
+	}
+	if len(cfg.Systems) != 2 {
+		t.Fatalf("expected 2 systems, got %d", len(cfg.Systems))
+	}
+
+	erp := cfg.Systems[0]
+	if erp.Name != "ERP System" {
+		t.Errorf("expected name 'ERP System', got %s", erp.Name)
+	}
+	if erp.EffectiveInterval(cfg.Defaults) != 20*time.Second {
+		t.Errorf("expected effective interval 20s, got %v", erp.EffectiveInterval(cfg.Defaults))
+	}
+
+	portal := cfg.Systems[1]
+	if portal.Name != "portal" {
+		t.Errorf("expected fallback name 'portal', got %s", portal.Name)
+	}
+}
+
+func TestValidate_Errors(t *testing.T) {
+	tests := []struct {
+		name    string
+		modify  func(*Config)
+		wantErr string
+	}{
+		{
+			name: "empty addr",
+			modify: func(c *Config) {
+				c.Server.Addr = ""
+			},
+			wantErr: "server.addr cannot be empty",
+		},
+		{
+			name: "interval too short",
+			modify: func(c *Config) {
+				c.Defaults.Interval = 5 * time.Second
+			},
+			wantErr: "defaults.interval must be at least 10s",
+		},
+		{
+			name: "no systems",
+			modify: func(c *Config) {
+				c.Systems = nil
+			},
+			wantErr: "at least one system must be configured",
+		},
+		{
+			name: "duplicate id",
+			modify: func(c *Config) {
+				c.Systems = append(c.Systems, SystemConfig{ID: "sys-1", IP: "127.0.0.1"})
+			},
+			wantErr: "duplicate system id",
+		},
+		{
+			name: "invalid id characters",
+			modify: func(c *Config) {
+				c.Systems[0].ID = "bad id with spaces!"
+			},
+			wantErr: "is invalid (use letters, numbers, hyphens, underscores)",
+		},
+		{
+			name: "neither url nor ip",
+			modify: func(c *Config) {
+				c.Systems[0].URL = ""
+				c.Systems[0].IP = ""
+			},
+			wantErr: "must have at least 'url' or 'ip'",
+		},
+		{
+			name: "invalid url scheme",
+			modify: func(c *Config) {
+				c.Systems[0].URL = "ftp://example.com"
+			},
+			wantErr: "must be http:// or https://",
+		},
+		{
+			name: "health_path without slash",
+			modify: func(c *Config) {
+				c.Systems[0].HealthPath = "health"
+			},
+			wantErr: "must start with '/'",
+		},
+		{
+			name: "invalid ip",
+			modify: func(c *Config) {
+				c.Systems[0].IP = "999.999.999.999"
+			},
+			wantErr: "has invalid ip",
+		},
+		{
+			name: "tcp_port without ip",
+			modify: func(c *Config) {
+				c.Systems[0].IP = ""
+				c.Systems[0].TCPPort = 80
+			},
+			wantErr: "tcp_port specified but no ip configured",
+		},
+		{
+			name: "tcp_port out of range",
+			modify: func(c *Config) {
+				c.Systems[0].TCPPort = 70000
+			},
+			wantErr: "tcp_port 70000 must be between 1 and 65535",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := DefaultConfig()
+			cfg.Systems = []SystemConfig{
+				{ID: "sys-1", URL: "https://example.com", IP: "1.1.1.1"},
+			}
+			tt.modify(cfg)
+			err := cfg.Validate()
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tt.wantErr)
+			}
+			if !contains(err.Error(), tt.wantErr) {
+				t.Errorf("expected error %q to contain %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func contains(str, substr string) bool {
+	return len(str) >= len(substr) && (str == substr || len(substr) == 0 || (len(str) > 0 && len(substr) > 0 && stringContains(str, substr)))
+}
+
+func stringContains(s, substr string) bool {
+	for i := 0; i+len(substr) <= len(s); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
