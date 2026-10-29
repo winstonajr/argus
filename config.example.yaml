@@ -18,12 +18,13 @@ systems:
     name: "ERP Corporativo"
     url: "https://erp.empresa.local/health"
     health_path: "/health"
-    ip: "10.0.0.15"
+    # O campo 'ip' pode ser um IP puro (ping ICMP) ou URL interna HTTP(S) da VM/origem
+    ip: "http://10.0.0.15:8080"
 
   - id: "portal"
     name: "Portal do Cliente"
     url: "https://portal.empresa.local"
-    ip: "10.0.0.22"
+    ip: "http://10.0.0.22"
 
   - id: "legado"
     name: "Sistema Legado"

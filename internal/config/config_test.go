@@ -145,6 +145,14 @@ func TestValidate_Errors(t *testing.T) {
 			},
 			wantErr: "tcp_port 70000 must be between 1 and 65535",
 		},
+		{
+			name: "tcp_port with http host url",
+			modify: func(c *Config) {
+				c.Systems[0].IP = "http://10.0.0.1"
+				c.Systems[0].TCPPort = 8080
+			},
+			wantErr: "tcp_port cannot be specified when ip/host is an http url",
+		},
 	}
 
 	for _, tt := range tests {
@@ -162,6 +170,29 @@ func TestValidate_Errors(t *testing.T) {
 				t.Errorf("expected error %q to contain %q", err.Error(), tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestConfig_HTTPHost(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Systems = []SystemConfig{
+		{ID: "sys-http-ip", IP: "http://10.0.0.159"},
+		{ID: "sys-incomplete-scheme", IP: "http:10.0.0.132"},
+		{ID: "sys-host-url", HostURL: "http://10.60.0.128:8080"},
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected config to be valid, got: %v", err)
+	}
+
+	if cfg.Systems[0].IP != "http://10.0.0.159" || !cfg.Systems[0].IsIPHTTP() {
+		t.Errorf("expected http://10.0.0.159 and IsIPHTTP true, got %s", cfg.Systems[0].IP)
+	}
+	if cfg.Systems[1].IP != "http://10.0.0.132" || !cfg.Systems[1].IsIPHTTP() {
+		t.Errorf("expected normalized http://10.0.0.132, got %s", cfg.Systems[1].IP)
+	}
+	if cfg.Systems[2].IP != "http://10.60.0.128:8080" || !cfg.Systems[2].IsIPHTTP() {
+		t.Errorf("expected host_url mapped to http://10.60.0.128:8080, got %s", cfg.Systems[2].IP)
 	}
 }
 

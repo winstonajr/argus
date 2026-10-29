@@ -136,6 +136,17 @@ func (s *Scheduler) runIPLoop(ctx context.Context, sys config.SystemConfig, jitt
 }
 
 func (s *Scheduler) executeIP(ctx context.Context, sys config.SystemConfig) {
+	if sys.IsIPHTTP() {
+		opts := checker.CheckOptions{
+			URL:                sys.IP,
+			Timeout:            sys.EffectiveHTTPTimeout(s.cfg.Defaults),
+			InsecureSkipVerify: sys.InsecureSkipVerify,
+		}
+		res := s.httpChecker.Check(ctx, opts)
+		s.store.RecordIPResult(sys.ID, res)
+		return
+	}
+
 	timeout := sys.EffectivePingTimeout(s.cfg.Defaults)
 
 	var res checker.Result

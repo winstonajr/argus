@@ -52,6 +52,7 @@ type SystemConfig struct {
 	HealthPath         string        `yaml:"health_path"`
 	ExpectedStatus     []int         `yaml:"expected_status"`
 	IP                 string        `yaml:"ip"`
+	HostURL            string        `yaml:"host_url"`
 	TCPPort            int           `yaml:"tcp_port"`
 	Interval           time.Duration `yaml:"interval"`
 	HTTPTimeout        time.Duration `yaml:"http_timeout"`
@@ -90,6 +91,12 @@ func (s *SystemConfig) EffectiveFailThreshold(d DefaultsConfig) int {
 		return s.FailThreshold
 	}
 	return d.FailThreshold
+}
+
+// IsIPHTTP returns true if IP is configured as an HTTP or HTTPS endpoint.
+func (s *SystemConfig) IsIPHTTP() bool {
+	trimmed := strings.TrimSpace(s.IP)
+	return strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://")
 }
 
 // Load reads and parses configuration from a YAML file.
@@ -183,6 +190,18 @@ func (c *Config) Validate() error {
 
 		sys.URL = strings.TrimSpace(sys.URL)
 		sys.IP = strings.TrimSpace(sys.IP)
+		sys.HostURL = strings.TrimSpace(sys.HostURL)
+
+		if sys.IP == "" && sys.HostURL != "" {
+			sys.IP = sys.HostURL
+		}
+
+		// Normalize incomplete scheme like http:10.0.0.0 or https:10.0.0.0
+		if strings.HasPrefix(sys.IP, "http:") && !strings.HasPrefix(sys.IP, "http://") {
+			sys.IP = "http://" + strings.TrimPrefix(sys.IP, "http:")
+		} else if strings.HasPrefix(sys.IP, "https:") && !strings.HasPrefix(sys.IP, "https://") {
+			sys.IP = "https://" + strings.TrimPrefix(sys.IP, "https:")
+		}
 
 		if sys.URL == "" && sys.IP == "" {
 			return fmt.Errorf("system %q must have at least 'url' or 'ip'", sys.ID)
@@ -202,8 +221,18 @@ func (c *Config) Validate() error {
 		}
 
 		if sys.IP != "" {
-			if parsedIP := net.ParseIP(sys.IP); parsedIP == nil {
-				return fmt.Errorf("system %q has invalid ip %q", sys.ID, sys.IP)
+			if sys.IsIPHTTP() {
+				u, err := url.ParseRequestURI(sys.IP)
+				if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+					return fmt.Errorf("system %q has invalid host url %q (must be http:// or https://)", sys.ID, sys.IP)
+				}
+				if sys.TCPPort != 0 {
+					return fmt.Errorf("system %q tcp_port cannot be specified when ip/host is an http url", sys.ID)
+				}
+			} else {
+				if parsedIP := net.ParseIP(sys.IP); parsedIP == nil {
+					return fmt.Errorf("system %q has invalid ip %q", sys.ID, sys.IP)
+				}
 			}
 		}
 
