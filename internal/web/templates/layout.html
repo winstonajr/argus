@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{if .Title}}{{.Title}} — {{end}}Sentinela</title>
+  <link rel="stylesheet" href="/static/css/tokens.css">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script src="/static/vendor/htmx.min.js"></script>
+  <script src="/static/js/app.js" defer></script>
+</head>
+<body>
+  <!-- Inline SVG Sprite -->
+  <div style="display:none;">
+    {{.IconsSVG}}
+  </div>
+
+  <header class="header">
+    <div class="header__left">
+      <a href="/" class="header__logo">
+        <svg class="icon" style="width:20px;height:20px;"><use href="#icon-radar"></use></svg>
+        <span>Sentinela</span>
+      </a>
+    </div>
+
+    {{if not .HideSearch}}
+    <div class="header__center">
+      <div class="search-box">
+        <svg class="icon"><use href="#icon-search"></use></svg>
+        <input type="text" id="search-input" placeholder="Buscar sistemas... (pressione /)" autocomplete="off">
+        <span class="kbd">/</span>
+      </div>
+
+      <div class="filter-chips">
+        <button class="chip active" data-filter="all">Todos</button>
+        <button class="chip" data-filter="down">Fora do ar</button>
+        <button class="chip" data-filter="degraded">Instável</button>
+        <button class="chip" data-filter="up">Operacional</button>
+      </div>
+    </div>
+    {{end}}
+
+    <div class="header__right">
+      <div class="live-indicator">
+        <span class="live-dot" id="live-dot"></span>
+        <span>Ao vivo</span>
+      </div>
+
+      <button class="btn-icon" id="tv-toggle-btn" title="Modo TV / Sala de Operações" aria-label="Modo TV">
+        <svg class="icon"><use href="#icon-tv"></use></svg>
+      </button>
+
+      <button class="btn-icon" id="theme-toggle-btn" title="Alternar tema claro/escuro" aria-label="Alternar tema">
+        <svg class="icon"><use href="#icon-moon"></use></svg>
+      </button>
+    </div>
+  </header>
+
+  {{template "content" .}}
+
+</body>
+</html>
