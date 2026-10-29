@@ -344,6 +344,8 @@ type cardViewModel struct {
 	URL                  string
 	DisplayURL           string
 	IP                   string
+	DisplayIP            string
+	IsIPHTTP             bool
 	TCPPort              int
 	WorstStatus          string
 	WorstStatusLower     string
@@ -404,6 +406,13 @@ func toCardViewModel(snap monitor.SystemSnapshot) cardViewModel {
 		displayURL = u.Host
 	}
 
+	displayIP := snap.IP
+	if snap.IsIPHTTP {
+		if u, err := url.Parse(snap.IP); err == nil && u.Host != "" {
+			displayIP = u.Host
+		}
+	}
+
 	lastCheckStr := ""
 	lastCheckTimeOnly := ""
 	if !snap.LastCheckedAt.IsZero() {
@@ -431,6 +440,8 @@ func toCardViewModel(snap monitor.SystemSnapshot) cardViewModel {
 		URL:                  snap.URL,
 		DisplayURL:           displayURL,
 		IP:                   snap.IP,
+		DisplayIP:            displayIP,
+		IsIPHTTP:             snap.IsIPHTTP,
 		TCPPort:              snap.TCPPort,
 		WorstStatus:          string(snap.WorstStatus),
 		WorstStatusLower:     worstLower,

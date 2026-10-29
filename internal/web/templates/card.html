@@ -31,6 +31,8 @@
     <h2 class="card__title">{{.Name}}</h2>
     {{if .DisplayURL}}
       <span class="card__subtitle mono">{{.DisplayURL}}</span>
+    {{else if .DisplayIP}}
+      <span class="card__subtitle mono">{{.DisplayIP}}</span>
     {{end}}
   </div>
 
@@ -62,7 +64,7 @@
     <!-- IP Target Box -->
     <div class="target-card target-card--{{.IPStatusLower}}">
       <div class="target-card__top">
-        <span class="target-card__label">IP {{if .IPCheck.Configured}}{{.IP}}{{end}}</span>
+        <span class="target-card__label">{{if .IsIPHTTP}}HOST{{else}}IP{{end}} {{if .IPCheck.Configured}}{{.DisplayIP}}{{end}}</span>
         <span class="target-card__dot target-card__dot--{{.IPStatusLower}}"></span>
       </div>
       <div class="target-card__val mono">
@@ -74,7 +76,10 @@
                 <span class="target-card__loss">{{printf "%.0f%%" .IPCheck.LastResult.Loss}}</span>
               {{end}}
             {{else}}
-              {{if eq .IPCheck.LastResult.ErrorCat "permission"}}SEM PERMISSÃO{{else}}TIMEOUT{{end}}
+              {{if eq .IPCheck.LastResult.ErrorCat "permission"}}SEM PERMISSÃO
+              {{else if .IPCheck.LastResult.StatusCode}}HTTP {{.IPCheck.LastResult.StatusCode}}
+              {{else if eq .IPCheck.LastResult.ErrorCat "connect"}}RECUSADO
+              {{else}}TIMEOUT{{end}}
             {{end}}
           {{else}}
             aguardando...

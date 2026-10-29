@@ -73,6 +73,12 @@ func Diagnose(dns *CheckSnapshot, ip *CheckSnapshot) (summary string, detail str
 
 	// 8. DNS UP but IP DOWN
 	if (!dnsFailing && dns != nil && dns.Configured) && ipFailing {
+		if ip.LastResult.StatusCode > 0 {
+			return "Host interno com erro", fmt.Sprintf("Aplicação pública responde, mas host interno retornou HTTP %d", ip.LastResult.StatusCode)
+		}
+		if ip.LastResult.ErrorCat == checker.CatConnect || ip.LastResult.ErrorCat == checker.CatTimeout {
+			return "Host interno inacessível", fmt.Sprintf("Aplicação responde via borda, mas host interno falhou: %s", ip.LastResult.Error)
+		}
 		return "Ping falhando", "Aplicação responde via HTTP, mas IP não responde ao ping (verifique firewall/ICMP)"
 	}
 

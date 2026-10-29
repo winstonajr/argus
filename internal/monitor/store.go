@@ -351,6 +351,7 @@ func (s *Store) buildSnapshot(sys *systemState) SystemSnapshot {
 		Name:           sys.cfg.Name,
 		URL:            sys.cfg.URL,
 		IP:             sys.cfg.IP,
+		IsIPHTTP:       sys.cfg.IsIPHTTP(),
 		TCPPort:        sys.cfg.TCPPort,
 		WorstStatus:    worst,
 		Diagnosis:      diagSummary,

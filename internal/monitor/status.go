@@ -77,6 +77,7 @@ type SystemSnapshot struct {
 	Name           string
 	URL            string
 	IP             string
+	IsIPHTTP       bool
 	TCPPort        int
 	WorstStatus    Status
 	Diagnosis      string
