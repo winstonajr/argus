@@ -3,6 +3,9 @@ bin/
 tmp/
 /sentinela
 
+# Config
+config.yaml
+
 # Data & SQLite
 data/
 *.db

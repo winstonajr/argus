@@ -7,7 +7,7 @@ tmp_dir = "tmp"
   # Build command
   cmd = "go build -o ./tmp/sentinela ./cmd/sentinela"
   # Binary execution command with example config
-  bin = "./tmp/sentinela -config config.example.yaml"
+  bin = "./tmp/sentinela -config config.yaml"
   # Full command line arguments
   args_bin = []
   # Watch file extensions
