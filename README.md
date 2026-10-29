@@ -25,7 +25,10 @@ Para cada sistema configurado, o **Sentinela** verifica de forma independente:
 
 ### 2. Rodando Localmente
 ```bash
-# Compilar e executar com a configuração de exemplo:
+# Modo desenvolvimento com Live Reload (Air):
+make dev
+
+# Compilar e executar normalmente:
 make run
 
 # Ou compilar o binário em bin/sentinela:

@@ -1,0 +1,47 @@
+# Air live reload configuration for Sentinela
+root = "."
+testdata_dir = "testdata"
+tmp_dir = "tmp"
+
+[build]
+  # Build command
+  cmd = "go build -o ./tmp/sentinela ./cmd/sentinela"
+  # Binary execution command with example config
+  bin = "./tmp/sentinela -config config.example.yaml"
+  # Full command line arguments
+  args_bin = []
+  # Watch file extensions
+  include_ext = ["go", "html", "css", "js", "svg", "yaml", "yml"]
+  # Directories to ignore
+  exclude_dir = ["bin", "tmp", "data", ".git"]
+  # Regex to ignore
+  exclude_regex = ["_test\\.go$", ".*\\.db.*$"]
+  # Exclude unchanged files
+  exclude_unchanged = true
+  # Follow symlinks
+  follow_symlink = false
+  # Delay after file change before rebuilding (ms)
+  delay = 500
+  # Stop running the old binary when build errors occur
+  stop_on_error = true
+  # Send Interrupt signal before killing process (graceful shutdown)
+  send_interrupt = true
+  # Delay before sending SIGKILL if process didn't terminate (ms)
+  kill_delay = 1000
+
+[log]
+  time = true
+  main_only = false
+
+[color]
+  main = "magenta"
+  watcher = "cyan"
+  build = "yellow"
+  runner = "green"
+
+[misc]
+  clean_on_exit = true
+
+[screen]
+  clear_on_rebuild = false
+  keep_scroll = true

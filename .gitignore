@@ -1,5 +1,6 @@
-# Binaries
+# Binaries & Air
 bin/
+tmp/
 /sentinela
 
 # Data & SQLite
