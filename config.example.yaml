@@ -2,7 +2,7 @@ server:
   addr: ":8080"
 
 storage:
-  path: "./data/sentinela.db"
+  path: "./data/argus.db"
   retention_checks: 168h   # 7 dias
   retention_events: 2160h  # 90 dias
 

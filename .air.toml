@@ -1,13 +1,13 @@
-# Air live reload configuration for Sentinela
+# Air live reload configuration for Argus
 root = "."
 testdata_dir = "testdata"
 tmp_dir = "tmp"
 
 [build]
   # Build command
-  cmd = "go build -o ./tmp/sentinela ./cmd/sentinela"
+  cmd = "go build -o ./tmp/argus ./cmd/argus"
   # Binary execution command with example config
-  bin = "./tmp/sentinela -config config.yaml"
+  bin = "./tmp/argus -config config.yaml"
   # Full command line arguments
   args_bin = []
   # Watch file extensions

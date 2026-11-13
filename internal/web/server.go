@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"sentinela/internal/config"
-	"sentinela/internal/monitor"
-	"sentinela/internal/storage"
+	"argus/internal/config"
+	"argus/internal/monitor"
+	"argus/internal/storage"
 )
 
 //go:embed static/*

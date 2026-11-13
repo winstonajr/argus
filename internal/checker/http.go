@@ -119,7 +119,7 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 			CheckedAt: now,
 		}
 	}
-	req.Header.Set("User-Agent", "Sentinela/1.0 (+https://github.com/empresa/sentinela)")
+	req.Header.Set("User-Agent", "Argus/1.0 (+https://github.com/empresa/argus)")
 
 	client := h.client
 	if opts.InsecureSkipVerify {

@@ -3,7 +3,7 @@ package monitor
 import (
 	"fmt"
 
-	"sentinela/internal/checker"
+	"argus/internal/checker"
 )
 
 // Diagnose evaluates DNS and IP states to pinpoint the root cause of an incident.

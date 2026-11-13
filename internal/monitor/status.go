@@ -3,7 +3,7 @@ package monitor
 import (
 	"time"
 
-	"sentinela/internal/checker"
+	"argus/internal/checker"
 )
 
 // Status represents the health state of a check or system.

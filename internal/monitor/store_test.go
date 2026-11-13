@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"sentinela/internal/checker"
-	"sentinela/internal/config"
+	"argus/internal/checker"
+	"argus/internal/config"
 )
 
 func TestStore_StateMachine(t *testing.T) {

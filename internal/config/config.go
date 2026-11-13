@@ -15,7 +15,7 @@ import (
 
 var idRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
-// Config defines the top-level configuration for Sentinela.
+// Config defines the top-level configuration for Argus.
 type Config struct {
 	Server   ServerConfig   `yaml:"server"`
 	Storage  StorageConfig  `yaml:"storage"`
@@ -125,7 +125,7 @@ func DefaultConfig() *Config {
 			Addr: ":8080",
 		},
 		Storage: StorageConfig{
-			Path:            "./data/sentinela.db",
+			Path:            "./data/argus.db",
 			RetentionChecks: 168 * time.Hour,  // 7 days
 			RetentionEvents: 2160 * time.Hour, // 90 days
 		},

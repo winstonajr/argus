@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"sentinela/internal/checker"
-	"sentinela/internal/monitor"
+	"argus/internal/checker"
+	"argus/internal/monitor"
 )
 
 func TestStorage_SQLiteFlow(t *testing.T) {
 	tmpDir := t.TempDir()
-	dbPath := filepath.Join(tmpDir, "test_sentinela.db")
+	dbPath := filepath.Join(tmpDir, "test_argus.db")
 
 	db, err := Open(dbPath, 7*24*time.Hour, 90*24*time.Hour)
 	if err != nil {

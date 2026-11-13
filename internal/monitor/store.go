@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"sentinela/internal/checker"
-	"sentinela/internal/config"
+	"argus/internal/checker"
+	"argus/internal/config"
 )
 
 const ringBufferSize = 120
