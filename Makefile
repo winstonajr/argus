@@ -1,7 +1,7 @@
 .PHONY: all build run dev test vet clean docker-build docker-push docker-up docker-down
 
 BINARY_NAME=argus
-DOCKER_IMAGE=winstonajr/argus:latest
+DOCKER_IMAGE=winajr/argus:latest
 
 all: test build
 

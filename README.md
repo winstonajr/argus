@@ -73,7 +73,7 @@ docker run -d \
   --cap-add=NET_RAW \
   -v $(pwd)/data:/app/data \
   -v $(pwd)/config.yaml:/app/config.yaml:ro \
-  winstonajr/argus:latest
+  winajr/argus:latest
 ```
 
 ---
