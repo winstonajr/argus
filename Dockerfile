@@ -1,13 +1,10 @@
 # Multi-stage Dockerfile for Argus
-FROM golang:1.23-alpine AS builder
+FROM golang:alpine AS builder
 
 WORKDIR /src
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates
-
-# Ensure Go uses local toolchain without attempting auto-downloads
-ENV GOTOOLCHAIN=local
 
 # Cache dependencies
 COPY go.mod go.sum ./
@@ -18,7 +15,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/argus ./cmd/argus
 
 # Final runtime image
-FROM alpine:3.20
+FROM alpine:latest
 
 RUN apk add --no-cache ca-certificates tzdata libcap \
     && addgroup -S argus && adduser -S argus -G argus
