@@ -1,8 +1,8 @@
-# 🛰️ Sentinela
+# 🛰️ Argus
 
 Monitor simples, resiliente e moderno de disponibilidade de sistemas internos e serviços em nuvem.
 
-Para cada sistema configurado, o **Sentinela** verifica de forma independente:
+Para cada sistema configurado, o **Argus** verifica de forma independente:
 1. **DNS / Aplicação**: resolução de nome e requisição HTTP (suporte a rota `/health` dedicada ou modo base, com identificação de erros de borda como Cloudflare 502/520).
 2. **IP / Máquina**: teste de conectividade direta na máquina via ping ICMP (ou porta TCP configurável).
 3. **Diagnóstico Automático**: cruza os estados para determinar se a falha é no DNS, na aplicação (com a máquina ligada), ou se a VM/rede inteira caiu.
@@ -18,20 +18,25 @@ Para cada sistema configurado, o **Sentinela** verifica de forma independente:
 - **Go 1.22+** instalado.
 - (Opcional) Permissão de socket raw para ICMP ping no Linux:
   ```bash
-  sudo setcap cap_net_raw+ep ./bin/sentinela
+  sudo setcap cap_net_raw+ep ./bin/argus
   # Ou permitir para o grupo de usuários no sistema:
   sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
   ```
 
 ### 2. Rodando Localmente
 ```bash
-# Compilar e executar com a configuração de exemplo:
-make run
+# Executar diretamente com Go:
+go run ./cmd/argus -config config.example.yaml
 
-# Ou compilar o binário em bin/sentinela:
-make build
-./bin/sentinela -config config.example.yaml
+# Ou em modo desenvolvimento com Live Reload (Air):
+air
+
+# Ou compilar o binário estático:
+go build -o bin/argus ./cmd/argus
+./bin/argus -config config.example.yaml
 ```
+
+*(Opcional: se preferir usar atalhos, o `Makefile` inclui `make run`, `make dev` e `make build`).*
 
 Acesse no navegador:
 👉 **http://localhost:8080**
@@ -40,20 +45,20 @@ Acesse no navegador:
 
 ## 🐳 Executando com Docker
 
-O Sentinela possui Dockerfile multi-stage com a capability `cap_net_raw` pré-configurada:
+O Argus possui Dockerfile multi-stage com a capability `cap_net_raw` pré-configurada:
 
 ```bash
 # Construir a imagem
-docker build -t sentinela:latest .
+docker build -t argus:latest .
 
 # Executar mapeando volume de dados e concedendo permissão de rede
 docker run -d \
-  --name sentinela \
+  --name argus \
   -p 8080:8080 \
   --cap-add=NET_RAW \
   -v $(pwd)/data:/app/data \
   -v $(pwd)/config.example.yaml:/app/config.yaml:ro \
-  sentinela:latest
+  argus:latest
 ```
 
 ---
@@ -65,7 +70,7 @@ server:
   addr: ":8080"
 
 storage:
-  path: "./data/sentinela.db"
+  path: "./data/argus.db"
   retention_checks: 168h   # 7 dias de logs detalhados
   retention_events: 2160h  # 90 dias de histórico de incidentes
 
@@ -117,9 +122,11 @@ systems:
 O projeto segue padrões rígidos de qualidade (verificação estática, detecção de race conditions e cobertura de testes):
 
 ```bash
-# Rodar todos os testes unitários com race detector:
-make test
+# Executar todos os testes com detector de concorrência:
+go test -v -race ./...
 
-# Rodar verificação estática do Go:
-make vet
+# Executar verificação estática do Go:
+go vet ./...
 ```
+
+*(Opcional: também disponíveis via `make test` e `make vet`).*

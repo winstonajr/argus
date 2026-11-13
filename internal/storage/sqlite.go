@@ -11,8 +11,8 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite" // register sqlite3 driver
-	"sentinela/internal/checker"
-	"sentinela/internal/monitor"
+	"argus/internal/checker"
+	"argus/internal/monitor"
 )
 
 type writeItemType int

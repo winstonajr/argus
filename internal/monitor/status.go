@@ -3,7 +3,7 @@ package monitor
 import (
 	"time"
 
-	"sentinela/internal/checker"
+	"argus/internal/checker"
 )
 
 // Status represents the health state of a check or system.
@@ -77,6 +77,7 @@ type SystemSnapshot struct {
 	Name           string
 	URL            string
 	IP             string
+	IsIPHTTP       bool
 	TCPPort        int
 	WorstStatus    Status
 	Diagnosis      string

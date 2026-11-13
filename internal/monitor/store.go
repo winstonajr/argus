@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"sentinela/internal/checker"
-	"sentinela/internal/config"
+	"argus/internal/checker"
+	"argus/internal/config"
 )
 
 const ringBufferSize = 120
@@ -351,6 +351,7 @@ func (s *Store) buildSnapshot(sys *systemState) SystemSnapshot {
 		Name:           sys.cfg.Name,
 		URL:            sys.cfg.URL,
 		IP:             sys.cfg.IP,
+		IsIPHTTP:       sys.cfg.IsIPHTTP(),
 		TCPPort:        sys.cfg.TCPPort,
 		WorstStatus:    worst,
 		Diagnosis:      diagSummary,

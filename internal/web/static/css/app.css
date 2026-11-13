@@ -1,4 +1,4 @@
-/* Sentinela Base & Component Styles */
+/* Argus Base & Component Styles */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -280,54 +280,63 @@ button, input {
 
 .cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: var(--sp-4);
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--sp-5);
 }
 
 /* ==========================================================================
-   Card Component
+   Card Component — High-Visibility NOC / TV Design
    ========================================================================== */
 .card {
   position: relative;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--sp-4);
+  background: var(--card-bg, var(--surface));
+  border: 2px solid var(--card-border, var(--border));
+  border-radius: 12px;
+  padding: var(--sp-4) var(--sp-5);
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
   overflow: hidden;
   cursor: pointer;
-  transition: border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+  transition: transform var(--dur-fast) var(--ease-out),
+              box-shadow 300ms ease,
+              border-color 300ms ease,
+              background 300ms ease;
   text-decoration: none;
 }
 
 .card:hover {
-  border-color: var(--border-strong);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
 }
 
 .card:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
 }
 
-/* Status side indicator (3px) */
-.card::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: 3px;
-  background-color: var(--status-unknown);
-  transition: background-color var(--dur-slow) var(--ease-out);
+/* Distinct Status Themes (Instantly recognizable from 3+ meters away) */
+.card--up {
+  --card-border: var(--status-up);
+  --card-bg: linear-gradient(180deg, rgba(47, 191, 113, 0.12) 0%, var(--surface) 40%);
 }
 
-.card--up::before { background-color: var(--status-up); }
-.card--degraded::before { background-color: var(--status-degraded); }
-.card--down::before { background-color: var(--status-down); }
-.card--unknown::before { background-color: var(--status-unknown); }
+.card--degraded {
+  --card-border: var(--status-degraded);
+  --card-bg: linear-gradient(180deg, rgba(224, 165, 38, 0.16) 0%, var(--surface) 40%);
+  box-shadow: 0 0 16px rgba(224, 165, 38, 0.15);
+}
+
+.card--down {
+  --card-border: var(--status-down);
+  --card-bg: linear-gradient(180deg, rgba(240, 82, 79, 0.22) 0%, var(--surface) 40%);
+  box-shadow: 0 0 28px rgba(240, 82, 79, 0.3);
+}
+
+.card--unknown {
+  --card-border: var(--border-strong);
+  --card-bg: var(--surface);
+}
 
 /* Progress bar line (15s polling animation) */
 .card__progress {
@@ -335,7 +344,7 @@ button, input {
   top: 0;
   left: 0;
   right: 0;
-  height: 1px;
+  height: 2px;
   background: transparent;
   overflow: hidden;
 }
@@ -343,219 +352,239 @@ button, input {
 .card__progress-bar {
   height: 100%;
   width: 100%;
-  background: var(--border-strong);
-  opacity: 0.6;
+  background: currentColor;
+  opacity: 0.7;
   transform-origin: left;
   animation: card-progress 15s linear;
 }
+
+.card--up .card__progress-bar { color: var(--status-up); }
+.card--degraded .card__progress-bar { color: var(--status-degraded); }
+.card--down .card__progress-bar { color: var(--status-down); }
+.card--unknown .card__progress-bar { color: var(--text-subtle); }
 
 /* Flash on status change */
 .card.just-changed {
   animation: flash-change 1.2s ease-out;
 }
 
-.card--up.just-changed { --flash-color: var(--status-up-tint); }
-.card--degraded.just-changed { --flash-color: var(--status-degraded-tint); }
-.card--down.just-changed { --flash-color: var(--status-down-tint); }
-
-/* Header of the Card */
-.card__header {
+/* Card Top Status Banner */
+.card__banner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--sp-2);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.card__title {
-  font-size: var(--fs-md);
-  font-weight: 600;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.pill {
-  display: inline-flex;
+.card__banner-status {
+  display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
-  border-radius: var(--radius-full);
-  font-size: var(--fs-xs);
-  font-weight: 500;
-  line-height: var(--lh-xs);
+  gap: 8px;
 }
 
-.pill--up {
-  color: var(--status-up);
-  background: var(--status-up-tint);
-}
-
-.pill--degraded {
-  color: var(--status-degraded);
-  background: var(--status-degraded-tint);
-}
-
-.pill--down {
-  color: var(--status-down);
-  background: var(--status-down-tint);
-}
-
-.pill--unknown {
-  color: var(--status-unknown);
-  background: var(--status-unknown-tint);
-}
-
-/* Pulsing dot for DOWN */
-.dot {
-  width: 6px;
-  height: 6px;
+.status-beacon {
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
-  background: currentColor;
-  position: relative;
   display: inline-block;
+  flex-shrink: 0;
 }
 
-.pill--down .dot::after {
+.status-beacon--up {
+  background-color: var(--status-up);
+  box-shadow: 0 0 8px var(--status-up);
+}
+
+.status-beacon--degraded {
+  background-color: var(--status-degraded);
+  box-shadow: 0 0 10px var(--status-degraded);
+}
+
+.status-beacon--down {
+  background-color: var(--status-down);
+  box-shadow: 0 0 12px var(--status-down);
+  position: relative;
+}
+
+.status-beacon--down::after {
   content: "";
   position: absolute;
-  top: -3px;
-  left: -3px;
-  right: -3px;
-  bottom: -3px;
+  top: -4px;
+  left: -4px;
+  right: -4px;
+  bottom: -4px;
   border-radius: 50%;
-  border: 1px solid var(--status-down);
-  animation: pulse-ring 2s infinite ease-out;
+  border: 1.5px solid var(--status-down);
+  animation: pulse-ring 1.8s infinite ease-out;
 }
 
-/* Check Rows: DNS and IP */
-.card__checks {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  background: var(--surface-2);
-  border-radius: var(--radius-sm);
-  padding: var(--sp-2) var(--sp-3);
+.status-beacon--unknown {
+  background-color: var(--status-unknown);
 }
 
-.check-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: var(--fs-sm);
-}
-
-.check-row__label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-muted);
-}
-
-.check-row__badge {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 1px 4px;
-  border-radius: var(--radius-sm);
-  background: var(--border);
-  color: var(--text-subtle);
+.card__banner-text {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
   text-transform: uppercase;
 }
 
-.check-row__target {
+.card__banner--up .card__banner-text { color: var(--status-up); }
+.card__banner--degraded .card__banner-text { color: var(--status-degraded); }
+.card__banner--down .card__banner-text { color: var(--status-down); }
+.card__banner--unknown .card__banner-text { color: var(--text-muted); }
+
+.card__banner-uptime {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* Headline: System Name (Large & Bold for Far Visibility) */
+.card__headline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.card__title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #FFFFFF;
+  line-height: 1.25;
+  letter-spacing: -0.3px;
+  word-break: break-word;
+}
+
+[data-theme="light"] .card__title {
+  color: #14171C;
+}
+
+.card__subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Dual Target Blocks Grid (DNS & IP) */
+.card__targets-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.target-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.target-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.target-card__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.target-card__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.target-card__dot--up { background-color: var(--status-up); box-shadow: 0 0 6px var(--status-up); }
+.target-card__dot--degraded { background-color: var(--status-degraded); box-shadow: 0 0 6px var(--status-degraded); }
+.target-card__dot--down { background-color: var(--status-down); box-shadow: 0 0 6px var(--status-down); }
+.target-card__dot--unknown { background-color: var(--border-strong); }
+
+.target-card__val {
+  font-size: 16px;
+  font-weight: 700;
   color: var(--text);
-  font-size: var(--fs-xs);
-  max-width: 140px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.check-row__status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-}
+.target-card--up .target-card__val { color: var(--status-up); }
+.target-card--degraded .target-card__val { color: var(--status-degraded); }
+.target-card--down .target-card__val { color: var(--status-down); }
+.target-card--unknown .target-card__val { color: var(--text-muted); }
 
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-}
-
-.status-dot--up { background: var(--status-up); }
-.status-dot--degraded { background: var(--status-degraded); }
-.status-dot--down { background: var(--status-down); }
-.status-dot--unknown { background: var(--status-unknown); }
-
-.check-row__error {
-  color: var(--status-down);
+.target-card__loss {
   font-size: 11px;
-}
-
-/* Heartbeat Bar (30 ticks) */
-.heartbeat {
-  display: flex;
-  gap: 2px;
-  height: 16px;
-  align-items: flex-end;
-}
-
-.heartbeat__tick {
-  flex: 1;
-  height: 100%;
-  border-radius: 1px;
-  background: var(--border);
-  transition: opacity var(--dur-fast) var(--ease-out);
-  position: relative;
-}
-
-.heartbeat__tick:hover {
-  opacity: 0.8;
-}
-
-.heartbeat__tick--up { background: var(--status-up); }
-.heartbeat__tick--degraded { background: var(--status-degraded); }
-.heartbeat__tick--down { background: var(--status-down); }
-.heartbeat__tick--unknown { background: var(--border); }
-
-/* Diagnosis Box in Card */
-.card__diagnosis {
-  font-size: var(--fs-xs);
-  padding: 6px 8px;
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.card__diagnosis--down {
-  background: var(--status-down-tint);
+  font-weight: 700;
   color: var(--status-down);
-  border: 1px solid rgba(240, 82, 79, 0.2);
+  background: var(--status-down-tint);
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  margin-left: 4px;
 }
 
-.card__diagnosis--degraded {
-  background: var(--status-degraded-tint);
-  color: var(--status-degraded);
-  border: 1px solid rgba(224, 165, 38, 0.2);
+/* Diagnosis Alert Banner */
+.card__alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  line-height: 1.35;
 }
 
-/* Footer: Last check & Uptime */
+.card__alert svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.card__alert--down {
+  background: rgba(240, 82, 79, 0.16);
+  border: 1px solid rgba(240, 82, 79, 0.45);
+  color: #FFA5A3;
+}
+
+.card__alert--degraded {
+  background: rgba(224, 165, 38, 0.16);
+  border: 1px solid rgba(224, 165, 38, 0.45);
+  color: #FFD980;
+}
+
+.card__alert-content strong {
+  display: inline;
+}
+
+/* Footer */
 .card__footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: var(--fs-xs);
+  font-size: 12px;
   color: var(--text-muted);
-  border-top: 1px solid var(--border);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
   padding-top: var(--sp-2);
+  margin-top: auto;
 }
 
-.card__footer-uptime {
-  font-family: var(--font-mono);
+.card__footer-action {
+  font-weight: 600;
+  color: var(--accent);
 }
 
 /* Card Skeleton */
@@ -564,6 +593,7 @@ button, input {
   background: linear-gradient(90deg, var(--surface) 25%, var(--surface-2) 50%, var(--surface) 75%);
   background-size: 200% 100%;
   animation: skeleton-shimmer 1.5s infinite;
+  border-color: var(--border);
 }
 
 /* Card Stale / Error state */
@@ -870,8 +900,8 @@ button, input {
 }
 
 @keyframes flash-change {
-  0% { background-color: var(--flash-color, var(--surface)); }
-  100% { background-color: var(--surface); }
+  0% { filter: brightness(1.2); }
+  100% { filter: brightness(1); }
 }
 
 @keyframes skeleton-shimmer {
@@ -879,8 +909,8 @@ button, input {
   100% { background-position: -200% 0; }
 }
 
-/* Staggered entry animation */
-.card {
+/* Staggered entry animation ONLY on initial skeleton load */
+.card--skeleton {
   animation: card-enter var(--dur-slow) var(--ease-out) backwards;
   animation-delay: calc(var(--i, 0) * 30ms);
 }
@@ -908,12 +938,56 @@ body.tv-mode .header__center {
 }
 
 body.tv-mode .cards-grid {
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
   gap: var(--sp-6);
 }
 
+body.tv-mode .card {
+  padding: var(--sp-6);
+  border-width: 3px;
+}
+
 body.tv-mode .card__title {
-  font-size: var(--fs-lg);
+  font-size: 30px;
+}
+
+body.tv-mode .card__subtitle {
+  font-size: 15px;
+}
+
+body.tv-mode .card__banner-text {
+  font-size: 16px;
+}
+
+body.tv-mode .status-beacon {
+  width: 14px;
+  height: 14px;
+}
+
+body.tv-mode .target-card {
+  padding: 12px 16px;
+}
+
+body.tv-mode .target-card__val {
+  font-size: 22px;
+}
+
+body.tv-mode .target-card__label {
+  font-size: 13px;
+}
+
+body.tv-mode .target-card__dot {
+  width: 11px;
+  height: 11px;
+}
+
+body.tv-mode .card__alert {
+  font-size: 16px;
+  padding: 12px 16px;
+}
+
+body.tv-mode .card__footer {
+  font-size: 14px;
 }
 
 /* ==========================================================================

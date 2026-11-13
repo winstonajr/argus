@@ -144,7 +144,7 @@ func TestHTTPChecker_Timeout(t *testing.T) {
 func TestHTTPChecker_DNSFailure(t *testing.T) {
 	checker := NewHTTPChecker()
 	res := checker.Check(context.Background(), CheckOptions{
-		URL:     "http://nonexistent-domain-sentinela-12345.local",
+		URL:     "http://nonexistent-domain-argus-12345.local",
 		Timeout: 1 * time.Second,
 	})
 

@@ -3,7 +3,7 @@
   <!-- Stats bar loads here independently -->
   <div class="stats-bar" style="opacity: 0.5;">
     <div class="stats-grid">
-      <span class="mono">Carregando métricas da sentinela...</span>
+      <span class="mono">Carregando métricas do Argus...</span>
     </div>
   </div>
 </div>
@@ -21,18 +21,24 @@
        hx-get="/cards/{{$sys.ID}}"
        hx-trigger="load, every 15s"
        hx-swap="outerHTML settle:200ms">
-      <div class="card__header">
-        <span class="card__title">{{$sys.Name}}</span>
-        <span class="pill pill--unknown"><span class="dot"></span> Carregando...</span>
-      </div>
-      <div class="card__checks">
-        <div class="check-row">
-          <span class="check-row__label"><span class="check-row__badge">DNS</span> {{$sys.URL}}</span>
-          <span class="mono">—</span>
+      <div class="card__banner card__banner--unknown">
+        <div class="card__banner-status">
+          <span class="status-beacon status-beacon--unknown"></span>
+          <span class="card__banner-text">CARREGANDO...</span>
         </div>
-        <div class="check-row">
-          <span class="check-row__label"><span class="check-row__badge">IP</span> {{$sys.IP}}</span>
-          <span class="mono">—</span>
+      </div>
+      <div class="card__headline">
+        <h2 class="card__title">{{$sys.Name}}</h2>
+        <span class="card__subtitle mono">{{if $sys.URL}}{{$sys.URL}}{{else}}{{$sys.IP}}{{end}}</span>
+      </div>
+      <div class="card__targets-grid">
+        <div class="target-card">
+          <div class="target-card__top"><span class="target-card__label">DNS</span></div>
+          <div class="target-card__val mono">—</div>
+        </div>
+        <div class="target-card">
+          <div class="target-card__top"><span class="target-card__label">IP</span></div>
+          <div class="target-card__val mono">—</div>
         </div>
       </div>
     </a>

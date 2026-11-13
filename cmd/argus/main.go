@@ -11,11 +11,11 @@ import (
 	"syscall"
 	"time"
 
-	"sentinela/internal/checker"
-	"sentinela/internal/config"
-	"sentinela/internal/monitor"
-	"sentinela/internal/storage"
-	"sentinela/internal/web"
+	"argus/internal/checker"
+	"argus/internal/config"
+	"argus/internal/monitor"
+	"argus/internal/storage"
+	"argus/internal/web"
 )
 
 func main() {
@@ -30,7 +30,7 @@ func main() {
 		}
 	}
 
-	log.Printf("[INFO] Sentinela iniciando com configuração: %s", configPath)
+	log.Printf("[INFO] Argus iniciando com configuração: %s", configPath)
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		log.Fatalf("[FATAL] Erro ao carregar configuração: %v", err)
@@ -83,7 +83,7 @@ func main() {
 	// Server runner
 	serverErrCh := make(chan error, 1)
 	go func() {
-		log.Printf("[INFO] Sentinela ouvindo em http://localhost%s (ou %s)", cfg.Server.Addr, cfg.Server.Addr)
+		log.Printf("[INFO] Argus ouvindo em http://localhost%s (ou %s)", cfg.Server.Addr, cfg.Server.Addr)
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErrCh <- err
 		}
@@ -95,7 +95,7 @@ func main() {
 
 	select {
 	case sig := <-sigCh:
-		log.Printf("[INFO] Sinal recebido (%v); encerrando sentinela com segurança...", sig)
+		log.Printf("[INFO] Sinal recebido (%v); encerrando Argus com segurança...", sig)
 	case err := <-serverErrCh:
 		log.Fatalf("[FATAL] Erro no servidor HTTP: %v", err)
 	}
@@ -118,5 +118,5 @@ func main() {
 		log.Printf("[WARN] Erro ao fechar SQLite: %v", err)
 	}
 
-	log.Printf("[INFO] Sentinela finalizado com sucesso.")
+	log.Printf("[INFO] Argus finalizado com sucesso.")
 }

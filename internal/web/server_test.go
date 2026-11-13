@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"sentinela/internal/checker"
-	"sentinela/internal/config"
-	"sentinela/internal/monitor"
-	"sentinela/internal/storage"
+	"argus/internal/checker"
+	"argus/internal/config"
+	"argus/internal/monitor"
+	"argus/internal/storage"
 )
 
 func setupTestServer(t *testing.T) (*Server, *monitor.Store, *storage.DB) {

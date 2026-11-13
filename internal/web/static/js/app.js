@@ -1,10 +1,10 @@
-// Sentinela UI Interactions (Vanilla JS, zero dependencies)
+// Argus UI Interactions (Vanilla JS, zero dependencies)
 (function() {
   'use strict';
 
   // 1. Theme Management
   function initTheme() {
-    const saved = localStorage.getItem('sentinela-theme');
+    const saved = localStorage.getItem('argus-theme');
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     const theme = saved || (prefersDark ? 'dark' : 'light');
     document.documentElement.setAttribute('data-theme', theme);
@@ -14,7 +14,7 @@
     const current = document.documentElement.getAttribute('data-theme') || 'dark';
     const next = current === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', next);
-    localStorage.setItem('sentinela-theme', next);
+    localStorage.setItem('argus-theme', next);
   }
 
   // 2. TV Mode
@@ -73,9 +73,9 @@
       if (downCountEl) {
         const downs = parseInt(downCountEl.textContent.trim(), 10) || 0;
         if (downs > 0) {
-          document.title = `(${downs}) Sentinela — Sistemas Fora`;
+          document.title = `(${downs}) Argus — Sistemas Fora`;
         } else {
-          document.title = 'Sentinela — Operacional';
+          document.title = 'Argus — Operacional';
         }
       }
     }

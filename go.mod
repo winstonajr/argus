@@ -1,4 +1,4 @@
-module sentinela
+module argus
 
 go 1.27.3
 
