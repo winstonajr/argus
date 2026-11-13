@@ -23,6 +23,14 @@ func main() {
 	flag.Parse()
 
 	configPath := *configPathFlag
+	if configPath == "config.yaml" {
+		if envPath := os.Getenv("ARGUS_CONFIG_PATH"); envPath != "" {
+			configPath = envPath
+		} else if envPath := os.Getenv("ARGUS_CONFIG"); envPath != "" {
+			configPath = envPath
+		}
+	}
+
 	if _, err := os.Stat(configPath); os.IsNotExist(err) && configPath == "config.yaml" {
 		if _, errEx := os.Stat("config.example.yaml"); errEx == nil {
 			configPath = "config.example.yaml"

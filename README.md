@@ -12,7 +12,28 @@ Para cada sistema configurado, o **Argus** verifica de forma independente:
 
 ---
 
-## 🚀 Como Executar
+## ⚡ Início Rápido (Local com Docker Compose)
+
+Para rodar o Argus em qualquer máquina sem precisar instalar Go:
+
+```bash
+# 1. Clone o repositório
+git clone https://github.com/winstonajr/argus.git && cd argus
+
+# 2. Crie seus arquivos locais a partir dos exemplos
+cp config.example.yaml config.yaml
+cp .env.example .env
+
+# 3. Suba o container com Docker Compose
+docker compose up -d
+```
+
+Acesse no navegador:
+👉 **http://localhost:8080**
+
+---
+
+## 🚀 Como Executar com Go
 
 ### 1. Pré-requisitos
 - **Go 1.22+** instalado.
@@ -36,70 +57,85 @@ go build -o bin/argus ./cmd/argus
 ./bin/argus -config config.example.yaml
 ```
 
-*(Opcional: se preferir usar atalhos, o `Makefile` inclui `make run`, `make dev` e `make build`).*
-
-Acesse no navegador:
-👉 **http://localhost:8080**
+*(Opcional: o `Makefile` inclui `make run`, `make dev`, `make test` e `make build`).*
 
 ---
 
 ## 🐳 Executando com Docker
 
-O Argus possui Dockerfile multi-stage com a capability `cap_net_raw` pré-configurada:
+Você pode rodar diretamente com `docker run` mapeando seu volume de dados e o arquivo de configuração:
 
 ```bash
-# Construir a imagem
-docker build -t argus:latest .
-
 # Executar mapeando volume de dados e concedendo permissão de rede
 docker run -d \
   --name argus \
   -p 8080:8080 \
   --cap-add=NET_RAW \
   -v $(pwd)/data:/app/data \
-  -v $(pwd)/config.example.yaml:/app/config.yaml:ro \
-  argus:latest
+  -v $(pwd)/config.yaml:/app/config.yaml:ro \
+  winstonajr/argus:latest
 ```
 
 ---
 
-## ⚙️ Configuração (`config.yaml`)
+## 🌐 Publicando no Docker Hub
+
+### Opção 1: Automático via GitHub Actions (Recomendado)
+O repositório já inclui a pipeline configurada em `.github/workflows/docker.yml`. Basta adicionar os seguintes Secrets no seu repositório GitHub (**Settings > Secrets and variables > Actions**):
+- `DOCKERHUB_USERNAME`: seu usuário no Docker Hub (`winstonajr`)
+- `DOCKERHUB_TOKEN`: Personal Access Token gerado no Docker Hub (**Account Settings > Security > New Access Token**)
+
+A cada commit na branch `main` ou criação de tag (`v1.0.0`), a imagem multi-plataforma (`linux/amd64` e `linux/arm64`) será gerada e publicada automaticamente no Docker Hub!
+
+### Opção 2: Manualmente via Terminal
+```bash
+# 1. Autenticar no Docker Hub
+docker login
+
+# 2. Construir e subir a imagem
+make docker-push
+# Ou manualmente:
+# docker build -t winstonajr/argus:latest .
+# docker push winstonajr/argus:latest
+```
+
+---
+
+## ⚙️ Variáveis de Ambiente e Configuração
+
+O Argus suporta configuração hierárquica: **Variáveis de Ambiente > Arquivo YAML > Padrões Embutidos**.
+
+### Variáveis Suportadas (`.env` ou Environment)
+Copie o arquivo `.env.example` para `.env` e altere como preferir:
+
+| Variável | Padrão | Descrição |
+|---|---|---|
+| `ARGUS_SERVER_ADDR` | `:8080` | Endereço e porta HTTP (ou use `PORT=8080`) |
+| `ARGUS_CONFIG_PATH` | `./config.yaml` | Caminho do arquivo de configuração YAML |
+| `ARGUS_STORAGE_PATH` | `./data/argus.db` | Caminho do banco SQLite de métricas |
+| `ARGUS_STORAGE_RETENTION_CHECKS` | `168h` (7 dias) | Retenção dos logs detalhados de checagens |
+| `ARGUS_STORAGE_RETENTION_EVENTS` | `2160h` (90 dias) | Retenção do histórico de incidentes |
+| `ARGUS_DEFAULTS_INTERVAL` | `30s` | Intervalo padrão entre checagens |
+| `ARGUS_DEFAULTS_HTTP_TIMEOUT` | `5s` | Timeout para requisições HTTP |
+| `ARGUS_DEFAULTS_PING_TIMEOUT` | `3s` | Timeout para ping ICMP / TCP |
+| `ARGUS_DEFAULTS_FAIL_THRESHOLD` | `2` | Falhas consecutivas para marcar DOWN |
+| `ARGUS_DEFAULTS_DEGRADED_LATENCY` | `2s` | Limite de latência para DEGRADED |
+
+### Interpolação de Variáveis no `config.yaml`
+Você pode usar a sintaxe `${VAR}` ou `${VAR:-fallback}` diretamente dentro do seu arquivo YAML:
 
 ```yaml
 server:
-  addr: ":8080"
+  addr: "${PORT:-:8080}"
 
 storage:
-  path: "./data/argus.db"
-  retention_checks: 168h   # 7 dias de logs detalhados
-  retention_events: 2160h  # 90 dias de histórico de incidentes
-
-defaults:
-  interval: 30s            # Intervalo entre verificações pelo backend
-  http_timeout: 5s         # Timeout para requisição HTTP
-  ping_timeout: 3s         # Timeout para o ping ICMP
-  fail_threshold: 2        # Falhas consecutivas para marcar como DOWN (evita alarmes falsos)
-  degraded_latency: 2s     # Latência que sinaliza lentidão (DEGRADED)
+  path: "${ARGUS_STORAGE_PATH:-./data/argus.db}"
 
 systems:
-  # Sistema com endpoint /health explícito (exige retorno 2xx)
   - id: "erp"
     name: "ERP Corporativo"
-    url: "https://erp.empresa.local/health"
-    health_path: "/health"
-    ip: "10.0.0.15"
-
-  # Sistema web comum (qualquer status < 500 indica servidor vivo)
-  - id: "portal"
-    name: "Portal do Cliente"
-    url: "https://portal.empresa.local"
-    ip: "10.0.0.22"
-
-  # Host com firewall que bloqueia ICMP: usa verificação TCP na porta 22
-  - id: "legado"
-    name: "Servidor de Arquivos"
-    ip: "10.0.1.5"
-    tcp_port: 22
+    url: "${ERP_URL:-https://erp.empresa.local/health}"
+    ip: "${ERP_INTERNAL_IP:-10.0.0.15}"
 ```
 
 ---
@@ -119,8 +155,6 @@ systems:
 
 ## 🧪 Testes e Qualidade
 
-O projeto segue padrões rígidos de qualidade (verificação estática, detecção de race conditions e cobertura de testes):
-
 ```bash
 # Executar todos os testes com detector de concorrência:
 go test -v -race ./...
@@ -128,5 +162,3 @@ go test -v -race ./...
 # Executar verificação estática do Go:
 go vet ./...
 ```
-
-*(Opcional: também disponíveis via `make test` e `make vet`).*
