@@ -1,6 +1,6 @@
 services:
   argus:
-    image: winstonajr/argus:latest
+    image: winajr/argus:latest
     build:
       context: .
       dockerfile: Dockerfile
