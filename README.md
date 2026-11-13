@@ -78,29 +78,6 @@ docker run -d \
 
 ---
 
-## 🌐 Publicando no Docker Hub
-
-### Opção 1: Automático via GitHub Actions (Recomendado)
-O repositório já inclui a pipeline configurada em `.github/workflows/docker.yml`. Basta adicionar os seguintes Secrets no seu repositório GitHub (**Settings > Secrets and variables > Actions**):
-- `DOCKERHUB_USERNAME`: seu usuário no Docker Hub (`winstonajr`)
-- `DOCKERHUB_TOKEN`: Personal Access Token gerado no Docker Hub (**Account Settings > Security > New Access Token**)
-
-A cada commit na branch `main` ou criação de tag (`v1.0.0`), a imagem multi-plataforma (`linux/amd64` e `linux/arm64`) será gerada e publicada automaticamente no Docker Hub!
-
-### Opção 2: Manualmente via Terminal
-```bash
-# 1. Autenticar no Docker Hub
-docker login
-
-# 2. Construir e subir a imagem
-make docker-push
-# Ou manualmente:
-# docker build -t winstonajr/argus:latest .
-# docker push winstonajr/argus:latest
-```
-
----
-
 ## ⚙️ Variáveis de Ambiente e Configuração
 
 O Argus suporta configuração hierárquica: **Variáveis de Ambiente > Arquivo YAML > Padrões Embutidos**.
