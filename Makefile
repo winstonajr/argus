@@ -1,6 +1,7 @@
-.PHONY: all build run dev test vet lint clean
+.PHONY: all build run dev test vet clean docker-build docker-push docker-up docker-down
 
 BINARY_NAME=argus
+DOCKER_IMAGE=winstonajr/argus:latest
 
 all: test build
 
@@ -21,3 +22,15 @@ vet:
 
 clean:
 	rm -rf bin/ tmp/ data/
+
+docker-build:
+	docker build -t $(DOCKER_IMAGE) .
+
+docker-push: docker-build
+	docker push $(DOCKER_IMAGE)
+
+docker-up:
+	docker compose up -d
+
+docker-down:
+	docker compose down

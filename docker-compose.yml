@@ -1,0 +1,23 @@
+services:
+  argus:
+    image: winstonajr/argus:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: argus
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    cap_add:
+      - NET_RAW # Required for ICMP ping functionality
+    environment:
+      - ARGUS_CONFIG_PATH=/app/config.yaml
+      - ARGUS_STORAGE_PATH=/app/data/argus.db
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      # Map your local config.yaml (create by running: cp config.example.yaml config.yaml)
+      - ./config.yaml:/app/config.yaml:ro
+      # Persist SQLite metrics and incident history
+      - ./data:/app/data

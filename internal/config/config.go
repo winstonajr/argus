@@ -100,16 +100,23 @@ func (s *SystemConfig) IsIPHTTP() bool {
 }
 
 // Load reads and parses configuration from a YAML file.
+// It supports environment interpolation (${VAR} or ${VAR:-default}) and ARGUS_* env overrides.
 func Load(path string) (*Config, error) {
+	_ = LoadDotEnv(".env")
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read config file %q: %w", path, err)
 	}
 
+	expandedData := []byte(ExpandEnv(string(data)))
+
 	cfg := DefaultConfig()
-	if err := yaml.Unmarshal(data, cfg); err != nil {
+	if err := yaml.Unmarshal(expandedData, cfg); err != nil {
 		return nil, fmt.Errorf("parse config yaml %q: %w", path, err)
 	}
+
+	cfg.applyEnvOverrides()
 
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validate config: %w", err)
