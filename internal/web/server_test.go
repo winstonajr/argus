@@ -150,3 +150,104 @@ func TestServer_Endpoints(t *testing.T) {
 		t.Errorf("GET /static/css/tokens.css returned %d, want 200", rrCSS.Code)
 	}
 }
+
+func TestServer_CardDiagnosisSlot(t *testing.T) {
+	server, store, db := setupTestServer(t)
+	defer db.Close()
+
+	// 1. Index page includes skeleton diagnosis slot
+	reqIndex := httptest.NewRequest(http.MethodGet, "/", nil)
+	rrIndex := httptest.NewRecorder()
+	server.ServeHTTP(rrIndex, reqIndex)
+	if !strings.Contains(rrIndex.Body.String(), "card__diagnosis-slot--skeleton") {
+		t.Errorf("expected index to include skeleton diagnosis slot")
+	}
+
+	// 2. UNKNOWN status card (portal has no check results yet)
+	reqUnknown := httptest.NewRequest(http.MethodGet, "/cards/portal", nil)
+	rrUnknown := httptest.NewRecorder()
+	server.ServeHTTP(rrUnknown, reqUnknown)
+	unknownBody := rrUnknown.Body.String()
+	if !strings.Contains(unknownBody, "card__diagnosis-slot--unknown") {
+		t.Errorf("expected portal card to have unknown diagnosis slot, got: %s", unknownBody)
+	}
+
+	// 3. UP status card
+	store.RecordDNSResult("erp", checker.Result{
+		OK:         true,
+		StatusCode: 200,
+		Latency:    25 * time.Millisecond,
+		CheckedAt:  time.Now(),
+	})
+	store.RecordIPResult("erp", checker.Result{
+		OK:        true,
+		Latency:   10 * time.Millisecond,
+		CheckedAt: time.Now(),
+	})
+	reqUP := httptest.NewRequest(http.MethodGet, "/cards/erp", nil)
+	rrUP := httptest.NewRecorder()
+	server.ServeHTTP(rrUP, reqUP)
+	upBody := rrUP.Body.String()
+	if !strings.Contains(upBody, "card__diagnosis-slot--up") {
+		t.Errorf("expected erp card to have up diagnosis slot, got: %s", upBody)
+	}
+	if !strings.Contains(upBody, "Todos os alvos operacionais") {
+		t.Errorf("expected erp card to contain 'Todos os alvos operacionais', got: %s", upBody)
+	}
+
+	// 4. DOWN status card with diagnosis
+	store.RecordDNSResult("erp", checker.Result{
+		OK:         false,
+		StatusCode: 502,
+		Error:      "Bad Gateway",
+		ErrorCat:   checker.CatProxy,
+		CheckedAt:  time.Now(),
+	})
+	store.RecordDNSResult("erp", checker.Result{
+		OK:         false,
+		StatusCode: 502,
+		Error:      "Bad Gateway",
+		ErrorCat:   checker.CatProxy,
+		CheckedAt:  time.Now(),
+	})
+	reqDown := httptest.NewRequest(http.MethodGet, "/cards/erp", nil)
+	rrDown := httptest.NewRecorder()
+	server.ServeHTTP(rrDown, reqDown)
+	downBody := rrDown.Body.String()
+	if !strings.Contains(downBody, "card__diagnosis-slot--down") {
+		t.Errorf("expected erp card to have down diagnosis slot, got: %s", downBody)
+	}
+	if !strings.Contains(downBody, "502") {
+		t.Errorf("expected diagnosis to mention 502, got: %s", downBody)
+	}
+
+	// 5. DEGRADED status card
+	// Recover to UP first
+	store.RecordDNSResult("erp", checker.Result{
+		OK:         true,
+		StatusCode: 200,
+		Latency:    30 * time.Millisecond,
+		CheckedAt:  time.Now(),
+	})
+	store.RecordDNSResult("erp", checker.Result{
+		OK:         true,
+		StatusCode: 200,
+		Latency:    30 * time.Millisecond,
+		CheckedAt:  time.Now(),
+	})
+	// Single failure triggers DEGRADED state
+	store.RecordDNSResult("erp", checker.Result{
+		OK:         false,
+		StatusCode: 503,
+		Error:      "Service Unavailable",
+		ErrorCat:   checker.CatHTTP5xx,
+		CheckedAt:  time.Now(),
+	})
+	reqDegraded := httptest.NewRequest(http.MethodGet, "/cards/erp", nil)
+	rrDegraded := httptest.NewRecorder()
+	server.ServeHTTP(rrDegraded, reqDegraded)
+	degradedBody := rrDegraded.Body.String()
+	if !strings.Contains(degradedBody, "card__diagnosis-slot--degraded") {
+		t.Errorf("expected erp card to have degraded diagnosis slot, got: %s", degradedBody)
+	}
+}

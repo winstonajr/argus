@@ -86,23 +86,27 @@
   });
 
   // 5. Network / HTMX Error Handling
-  document.body.addEventListener('htmx:responseError', function(evt) {
-    const card = evt.detail.target;
-    if (card && card.classList.contains('card')) {
+  function markCardStale(card) {
+    if (card && card.classList && card.classList.contains('card')) {
       card.classList.add('stale');
       let warning = card.querySelector('.card__stale-warning');
       if (!warning) {
         warning = document.createElement('div');
         warning.className = 'card__stale-warning';
-        warning.textContent = 'Sem resposta do servidor';
-        card.prepend(warning);
+        warning.textContent = 'Sem resposta';
+        card.appendChild(warning);
       }
     }
+  }
+
+  document.body.addEventListener('htmx:responseError', function(evt) {
+    markCardStale(evt.detail.target);
     const liveDot = document.getElementById('live-dot');
     if (liveDot) liveDot.classList.add('disconnected');
   });
 
   document.body.addEventListener('htmx:sendError', function(evt) {
+    markCardStale(evt.detail.target);
     const liveDot = document.getElementById('live-dot');
     if (liveDot) liveDot.classList.add('disconnected');
   });

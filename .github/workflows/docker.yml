@@ -8,6 +8,20 @@ on:
       - 'v*.*.*'
       - 'v*.*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag manual para a imagem Docker (ex: v1.0.0; deixe vazio para auto-semver)'
+        required: false
+        default: ''
+        type: string
+      latest:
+        description: 'Atualizar também a tag latest?'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
 
 jobs:
   docker:
@@ -17,6 +31,18 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Auto Bump Version and Push Tag
+        id: auto_tag
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.tag == '')
+        uses: anothrNick/github-tag-action@1.71.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WITH_V: true
+          DEFAULT_BUMP: patch
+          RELEASE_BRANCHES: main
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -36,11 +62,13 @@ jobs:
         with:
           images: ${{ secrets.DOCKERHUB_USERNAME || 'winajr' }}/argus
           tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=ref,event=branch
+            type=raw,value=latest,enable=${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.latest == true) }}
+            type=raw,value=${{ steps.auto_tag.outputs.new_tag }},enable=${{ steps.auto_tag.outputs.new_tag != '' }}
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=sha
+            type=ref,event=branch
+            type=sha,format=short
 
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5

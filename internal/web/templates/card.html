@@ -91,16 +91,32 @@
     </div>
   </div>
 
-  <!-- Diagnosis Alert Box (Large and bold when issue occurs) -->
-  {{if and (ne .WorstStatus "UP") (ne .WorstStatus "UNKNOWN")}}
-  <div class="card__alert card__alert--{{.WorstStatusLower}}">
-    <svg class="icon" style="width:16px;height:16px;"><use href="{{if eq .WorstStatus "DOWN"}}#icon-down{{else}}#icon-degraded{{end}}"></use></svg>
-    <div class="card__alert-content">
-      <strong>{{.Diagnosis}}</strong>
-      {{if .DownDurationStr}}<span class="mono">· há {{.DownDurationStr}}</span>{{end}}
-    </div>
+  <!-- Status / Diagnosis Dedicated Slot (Invariable height across all statuses to prevent grid distortion) -->
+  <div class="card__diagnosis-slot card__diagnosis-slot--{{.WorstStatusLower}}" {{if .Diagnosis}}title="{{.Diagnosis}}"{{end}}>
+    {{if eq .WorstStatus "UP"}}
+      <svg class="icon icon--inline" style="width:14px;height:14px;"><use href="#icon-up"></use></svg>
+      <div class="card__diagnosis-text">
+        <span>Todos os alvos operacionais</span>
+      </div>
+    {{else if eq .WorstStatus "DOWN"}}
+      <svg class="icon icon--inline" style="width:14px;height:14px;"><use href="#icon-down"></use></svg>
+      <div class="card__diagnosis-text">
+        <strong>{{if .Diagnosis}}{{.Diagnosis}}{{else}}Sistema fora do ar{{end}}</strong>
+        {{if .DownDurationStr}}<span class="mono">· há {{.DownDurationStr}}</span>{{end}}
+      </div>
+    {{else if eq .WorstStatus "DEGRADED"}}
+      <svg class="icon icon--inline" style="width:14px;height:14px;"><use href="#icon-degraded"></use></svg>
+      <div class="card__diagnosis-text">
+        <strong>{{if .Diagnosis}}{{.Diagnosis}}{{else}}Instabilidade detectada{{end}}</strong>
+        {{if .DownDurationStr}}<span class="mono">· há {{.DownDurationStr}}</span>{{end}}
+      </div>
+    {{else}}
+      <svg class="icon icon--inline" style="width:14px;height:14px;"><use href="#icon-unknown"></use></svg>
+      <div class="card__diagnosis-text">
+        <span>Aguardando telemetria inicial...</span>
+      </div>
+    {{end}}
   </div>
-  {{end}}
 
   <!-- Card Footer -->
   <div class="card__footer">
