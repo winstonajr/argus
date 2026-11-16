@@ -209,8 +209,8 @@ func TestConfig_TCPPortDefault(t *testing.T) {
 		t.Fatalf("expected config to be valid, got: %v", err)
 	}
 
-	if cfg.Systems[0].TCPPort != 22 {
-		t.Errorf("expected default tcp_port 22, got %d", cfg.Systems[0].TCPPort)
+	if cfg.Systems[0].TCPPort != 0 {
+		t.Errorf("expected default tcp_port 0 (ICMP), got %d", cfg.Systems[0].TCPPort)
 	}
 	if cfg.Systems[1].TCPPort != 443 {
 		t.Errorf("expected custom tcp_port 443, got %d", cfg.Systems[1].TCPPort)

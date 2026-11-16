@@ -20,6 +20,19 @@
     <div class="history-title-group">
       <h1 class="history-title">{{.System.Name}}</h1>
       <span class="mono" style="color:var(--text-muted);">{{.System.ID}}</span>
+      <button type="button"
+              id="check-now-btn"
+              class="period-btn"
+              data-system-id="{{.System.ID}}">
+        Testar Agora
+      </button>
+      <button type="button"
+              id="maintenance-toggle-btn"
+              class="period-btn {{if .System.InMaintenance}}active{{end}}"
+              data-system-id="{{.System.ID}}"
+              data-maintenance="{{.System.InMaintenance}}">
+        {{if .System.InMaintenance}}Desativar Manutenção{{else}}Modo Manutenção{{end}}
+      </button>
     </div>
 
     <div class="history-status-banner history-status-banner--{{.WorstStatusLower}}">

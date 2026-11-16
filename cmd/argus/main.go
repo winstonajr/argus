@@ -106,6 +106,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("[FATAL] Erro ao inicializar servidor web: %v", err)
 	}
+	webServer.SetCheckTrigger(scheduler.CheckNow)
 
 	httpSrv := &http.Server{
 		Addr:              cfg.Server.Addr,
@@ -151,6 +152,7 @@ loop:
 			rootCtx, rootCancel = context.WithCancel(context.Background())
 			scheduler = monitor.NewScheduler(newCfg, store, httpChecker, pingChecker)
 			scheduler.Start(rootCtx)
+			webServer.SetCheckTrigger(scheduler.CheckNow)
 			log.Printf("[INFO] Configuração recarregada (%d sistemas)", len(newCfg.Systems))
 		case err := <-serverErrCh:
 			log.Fatalf("[FATAL] Erro no servidor HTTP: %v", err)

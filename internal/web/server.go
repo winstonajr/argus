@@ -46,18 +46,23 @@ type Server struct {
 	historyTmpl *template.Template
 	statusTmpl  *template.Template
 	iconsSVG    template.HTML
-	sseMu       sync.RWMutex
-	sseClients  map[chan sseEvent]struct{}
+	sseMu           sync.RWMutex
+	sseClients      map[chan sseEvent]struct{}
+	triggerMu       sync.RWMutex
+	checkTrigger    func(string) bool
+	manualCheckMu   sync.Mutex
+	lastManualCheck map[string]time.Time
 }
 
 // NewServer initializes the HTTP routing and parses embedded templates.
 func NewServer(cfg *config.Config, store *monitor.Store, db *storage.DB) (*Server, error) {
 	s := &Server{
-		cfg:        cfg,
-		store:      store,
-		storage:    db,
-		mux:        http.NewServeMux(),
-		sseClients: make(map[chan sseEvent]struct{}),
+		cfg:             cfg,
+		store:           store,
+		storage:         db,
+		mux:             http.NewServeMux(),
+		sseClients:      make(map[chan sseEvent]struct{}),
+		lastManualCheck: make(map[string]time.Time),
 	}
 
 	// Read inline SVG icons
@@ -134,10 +139,18 @@ func (s *Server) routes() {
 	// API and Health
 	s.mux.HandleFunc("GET /api/systems", s.handleAPISystems)
 	s.mux.HandleFunc("GET /api/systems/{id}", s.handleAPISystem)
+	s.mux.HandleFunc("POST /api/systems/{id}/check", s.handleTriggerCheck)
 	s.mux.HandleFunc("POST /api/systems/{id}/maintenance", s.handleToggleMaintenance)
 	s.mux.HandleFunc("GET /api/events", s.handleAPIEvents)
 	s.mux.HandleFunc("GET /metrics", s.handleMetrics)
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
+}
+
+// SetCheckTrigger registers a callback to execute an immediate system check.
+func (s *Server) SetCheckTrigger(fn func(string) bool) {
+	s.triggerMu.Lock()
+	s.checkTrigger = fn
+	s.triggerMu.Unlock()
 }
 
 // UpdateConfig updates the server's configuration reference safely at runtime.
@@ -243,7 +256,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) renderStatsHTML() (string, error) {
-	stats := s.store.GetStats()
+	stats := s.store.GetSummaryCounts()
 
 	lastCheckStr := "—"
 	if !stats.LastCheck.IsZero() {
@@ -581,6 +594,62 @@ func (s *Server) handleToggleMaintenance(w http.ResponseWriter, r *http.Request)
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"system_id":      id,
 		"in_maintenance": next,
+	})
+}
+
+// Handler: POST /api/systems/{id}/check
+func (s *Server) handleTriggerCheck(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, ok := s.store.GetSystem(id); !ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "system not found"})
+		return
+	}
+
+	s.triggerMu.RLock()
+	trigger := s.checkTrigger
+	s.triggerMu.RUnlock()
+	if trigger == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "check trigger unavailable"})
+		return
+	}
+
+	const cooldown = 3 * time.Second
+	now := time.Now()
+	s.manualCheckMu.Lock()
+	if last, exists := s.lastManualCheck[id]; exists && now.Sub(last) < cooldown {
+		remaining := cooldown - now.Sub(last)
+		retryAfter := int((remaining + time.Second - 1) / time.Second)
+		if retryAfter < 1 {
+			retryAfter = 1
+		}
+		s.manualCheckMu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error":               "rate limit exceeded",
+			"retry_after_seconds": retryAfter,
+		})
+		return
+	}
+	s.lastManualCheck[id] = now
+	s.manualCheckMu.Unlock()
+
+	if !trigger(id) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "system not found"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"system_id": id,
+		"status":    "scheduled",
 	})
 }
 

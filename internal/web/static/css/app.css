@@ -328,10 +328,19 @@ button, input {
   text-decoration: none;
 }
 
+.card[draggable="true"] * {
+  -webkit-user-drag: none;
+}
+
 .card.dragging {
   opacity: 0.45;
   transform: scale(0.98);
   cursor: grabbing;
+  user-select: none;
+}
+
+.card.dragging * {
+  pointer-events: none;
 }
 
 .card:hover {

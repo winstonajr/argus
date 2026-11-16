@@ -427,3 +427,78 @@ func TestServer_MaintenanceAndNilStorage(t *testing.T) {
 		}
 	}
 }
+
+func TestServer_TriggerCheckAndUIControls(t *testing.T) {
+	cfg := &config.Config{
+		Defaults: config.DefaultsConfig{Interval: 10 * time.Second, FailThreshold: 2, DegradedLatency: 2 * time.Second},
+		Systems: []config.SystemConfig{
+			{ID: "erp", Name: "ERP", URL: "https://erp.local"},
+		},
+	}
+	store := monitor.NewStore(cfg)
+	server, err := NewServer(cfg, store, nil)
+	if err != nil {
+		t.Fatalf("NewServer failed: %v", err)
+	}
+
+	// 1. Without trigger configured -> 503
+	reqUnavail := httptest.NewRequest(http.MethodPost, "/api/systems/erp/check", nil)
+	rrUnavail := httptest.NewRecorder()
+	server.ServeHTTP(rrUnavail, reqUnavail)
+	if rrUnavail.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 when trigger unavailable, got %d", rrUnavail.Code)
+	}
+
+	// 2. Configure trigger
+	triggered := 0
+	server.SetCheckTrigger(func(sysID string) bool {
+		if sysID == "erp" {
+			triggered++
+			return true
+		}
+		return false
+	})
+
+	// Unknown system -> 404
+	req404 := httptest.NewRequest(http.MethodPost, "/api/systems/unknown/check", nil)
+	rr404 := httptest.NewRecorder()
+	server.ServeHTTP(rr404, req404)
+	if rr404.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for unknown system, got %d", rr404.Code)
+	}
+
+	// Valid system -> 202 Accepted
+	reqOK := httptest.NewRequest(http.MethodPost, "/api/systems/erp/check", nil)
+	rrOK := httptest.NewRecorder()
+	server.ServeHTTP(rrOK, reqOK)
+	if rrOK.Code != http.StatusAccepted || triggered != 1 {
+		t.Fatalf("expected 202 and triggered=1, got %d (triggered=%d)", rrOK.Code, triggered)
+	}
+
+	// Immediate retry within 3s -> 429 Too Many Requests
+	req429 := httptest.NewRequest(http.MethodPost, "/api/systems/erp/check", nil)
+	rr429 := httptest.NewRecorder()
+	server.ServeHTTP(rr429, req429)
+	if rr429.Code != http.StatusTooManyRequests || triggered != 1 {
+		t.Fatalf("expected 429 rate limit and triggered=1, got %d (triggered=%d)", rr429.Code, triggered)
+	}
+
+	// 3. UI controls presence
+	reqIndex := httptest.NewRequest(http.MethodGet, "/", nil)
+	rrIndex := httptest.NewRecorder()
+	server.ServeHTTP(rrIndex, reqIndex)
+	if !strings.Contains(rrIndex.Body.String(), `id="sort-toggle-btn"`) {
+		t.Errorf("expected index page to include sort-toggle-btn")
+	}
+
+	reqHist := httptest.NewRequest(http.MethodGet, "/systems/erp/history", nil)
+	rrHist := httptest.NewRecorder()
+	server.ServeHTTP(rrHist, reqHist)
+	histBody := rrHist.Body.String()
+	if !strings.Contains(histBody, `id="maintenance-toggle-btn"`) {
+		t.Errorf("expected history page to include maintenance-toggle-btn")
+	}
+	if !strings.Contains(histBody, `id="check-now-btn"`) {
+		t.Errorf("expected history page to include check-now-btn")
+	}
+}
