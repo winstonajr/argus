@@ -13,6 +13,21 @@ services:
     environment:
       - ARGUS_CONFIG_PATH=/app/config.yaml
       - ARGUS_STORAGE_PATH=/app/data/argus.db
+      # Opcional: configure alertas direto via env (sem precisar editar o YAML)
+      # - ARGUS_DEFAULTS_TLS_WARN_DAYS=15
+      # - ARGUS_ALERTS_COOLDOWN=5m
+      # - ARGUS_ALERTS_NOTIFY_ON_DEGRADED=false
+      # - ARGUS_ALERTS_WEBHOOK_URL=https://hooks.example.com/argus
+      # - ARGUS_ALERTS_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+      # - ARGUS_ALERTS_DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+      # - ARGUS_ALERTS_TELEGRAM_BOT_TOKEN=123456:ABC-DEF
+      # - ARGUS_ALERTS_TELEGRAM_CHAT_ID=-1001234567890
+      # - ARGUS_ALERTS_EMAIL_SMTP_HOST=smtp.example.com
+      # - ARGUS_ALERTS_EMAIL_SMTP_PORT=587
+      # - ARGUS_ALERTS_EMAIL_USERNAME=argus@example.com
+      # - ARGUS_ALERTS_EMAIL_PASSWORD=secret
+      # - ARGUS_ALERTS_EMAIL_FROM=argus@example.com
+      # - ARGUS_ALERTS_EMAIL_TO=ops@example.com,sre@example.com
     env_file:
       - path: .env
         required: false

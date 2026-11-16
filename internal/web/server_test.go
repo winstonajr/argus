@@ -1,6 +1,8 @@
 package web
 
 import (
+	"bufio"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -249,5 +251,172 @@ func TestServer_CardDiagnosisSlot(t *testing.T) {
 	degradedBody := rrDegraded.Body.String()
 	if !strings.Contains(degradedBody, "card__diagnosis-slot--degraded") {
 		t.Errorf("expected erp card to have degraded diagnosis slot, got: %s", degradedBody)
+	}
+}
+
+func TestServer_CardHeartbeatSparklineAndSSE(t *testing.T) {
+	server, store, db := setupTestServer(t)
+	defer db.Close()
+
+	now := time.Now()
+	store.RecordDNSResult("erp", checker.Result{OK: true, StatusCode: 200, Latency: 20 * time.Millisecond, CheckedAt: now})
+	store.RecordDNSResult("erp", checker.Result{OK: true, StatusCode: 200, Latency: 40 * time.Millisecond, CheckedAt: now.Add(time.Second)})
+
+	reqCard := httptest.NewRequest(http.MethodGet, "/cards/erp", nil)
+	rrCard := httptest.NewRecorder()
+	server.ServeHTTP(rrCard, reqCard)
+	body := rrCard.Body.String()
+	if !strings.Contains(body, "heartbeat-bar") {
+		t.Errorf("expected card to render heartbeat-bar")
+	}
+	if !strings.Contains(body, `class="sparkline"`) {
+		t.Errorf("expected card to render latency sparkline")
+	}
+
+	// Test SSE endpoint using real httptest.Server
+	ts := httptest.NewServer(server)
+	defer ts.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/events", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("SSE request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	reader := bufio.NewReader(resp.Body)
+	// Read initial ": connected" line
+	line, err := reader.ReadString('\n')
+	if err != nil || !strings.Contains(line, "connected") {
+		t.Fatalf("expected connected comment, got %q (err=%v)", line, err)
+	}
+
+	// Trigger a check update -> should emit event: card
+	store.RecordDNSResult("erp", checker.Result{OK: true, StatusCode: 200, Latency: 25 * time.Millisecond, CheckedAt: time.Now()})
+
+	foundCardEvent := false
+	for i := 0; i < 10; i++ {
+		l, err := reader.ReadString('\n')
+		if err != nil {
+			break
+		}
+		if strings.HasPrefix(l, "event: card") {
+			foundCardEvent = true
+			break
+		}
+	}
+	if !foundCardEvent {
+		t.Errorf("expected SSE stream to emit 'event: card'")
+	}
+}
+
+func TestServer_Phase3Endpoints(t *testing.T) {
+	server, store, db := setupTestServer(t)
+	defer db.Close()
+
+	store.RecordDNSResult("erp", checker.Result{
+		OK:          true,
+		StatusCode:  200,
+		Latency:     35 * time.Millisecond,
+		HasTLS:      true,
+		TLSDaysLeft: 42,
+		CheckedAt:   time.Now(),
+	})
+
+	// 1. GET /status (public status page - must not expose internal IP)
+	reqStatus := httptest.NewRequest(http.MethodGet, "/status", nil)
+	rrStatus := httptest.NewRecorder()
+	server.ServeHTTP(rrStatus, reqStatus)
+	if rrStatus.Code != http.StatusOK {
+		t.Errorf("GET /status returned %d, want 200", rrStatus.Code)
+	}
+	statusBody := rrStatus.Body.String()
+	if !strings.Contains(statusBody, "ERP Corporativo") {
+		t.Errorf("expected /status to contain 'ERP Corporativo'")
+	}
+	if strings.Contains(statusBody, "10.0.0.1") {
+		t.Errorf("expected /status NOT to expose internal IP 10.0.0.1")
+	}
+
+	// 2. GET /api/systems
+	reqAPISys := httptest.NewRequest(http.MethodGet, "/api/systems", nil)
+	rrAPISys := httptest.NewRecorder()
+	server.ServeHTTP(rrAPISys, reqAPISys)
+	if rrAPISys.Code != http.StatusOK || !strings.Contains(rrAPISys.Body.String(), `"erp"`) {
+		t.Errorf("GET /api/systems unexpected response: %d %s", rrAPISys.Code, rrAPISys.Body.String())
+	}
+
+	// 3. GET /api/events
+	reqAPIEv := httptest.NewRequest(http.MethodGet, "/api/events", nil)
+	rrAPIEv := httptest.NewRecorder()
+	server.ServeHTTP(rrAPIEv, reqAPIEv)
+	if rrAPIEv.Code != http.StatusOK {
+		t.Errorf("GET /api/events returned %d, want 200", rrAPIEv.Code)
+	}
+
+	// 4. GET /metrics (Prometheus)
+	reqMetrics := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rrMetrics := httptest.NewRecorder()
+	server.ServeHTTP(rrMetrics, reqMetrics)
+	if rrMetrics.Code != http.StatusOK {
+		t.Errorf("GET /metrics returned %d, want 200", rrMetrics.Code)
+	}
+	metricsBody := rrMetrics.Body.String()
+	if !strings.Contains(metricsBody, `argus_system_up{id="erp"`) {
+		t.Errorf("expected Prometheus argus_system_up metric, got: %s", metricsBody)
+	}
+	if !strings.Contains(metricsBody, `argus_tls_cert_expiry_days{id="erp"} 42`) {
+		t.Errorf("expected Prometheus TLS expiry metric, got: %s", metricsBody)
+	}
+
+	// 5. GET /systems/erp/export?period=30d&format=csv
+	reqExport := httptest.NewRequest(http.MethodGet, "/systems/erp/export?period=30d&format=csv", nil)
+	rrExport := httptest.NewRecorder()
+	server.ServeHTTP(rrExport, reqExport)
+	if rrExport.Code != http.StatusOK || !strings.Contains(rrExport.Body.String(), "occurred_at,kind") {
+		t.Errorf("GET /systems/erp/export CSV failed: %d %s", rrExport.Code, rrExport.Body.String())
+	}
+}
+
+func TestServer_MaintenanceAndNilStorage(t *testing.T) {
+	cfg := &config.Config{
+		Defaults: config.DefaultsConfig{Interval: 10 * time.Second, FailThreshold: 2, DegradedLatency: 2 * time.Second},
+		Systems: []config.SystemConfig{
+			{ID: "erp", Name: "ERP", URL: "https://erp.local"},
+		},
+	}
+	store := monitor.NewStore(cfg)
+	server, err := NewServer(cfg, store, nil)
+	if err != nil {
+		t.Fatalf("NewServer with nil storage failed: %v", err)
+	}
+
+	// 1. Toggle maintenance via POST
+	reqMaint := httptest.NewRequest(http.MethodPost, "/api/systems/erp/maintenance?enabled=true", nil)
+	rrMaint := httptest.NewRecorder()
+	server.ServeHTTP(rrMaint, reqMaint)
+	if rrMaint.Code != http.StatusOK || !strings.Contains(rrMaint.Body.String(), `"in_maintenance":true`) {
+		t.Fatalf("POST maintenance unexpected: %d %s", rrMaint.Code, rrMaint.Body.String())
+	}
+
+	// Card should display MANUTENÇÃO badge
+	reqCard := httptest.NewRequest(http.MethodGet, "/cards/erp", nil)
+	rrCard := httptest.NewRecorder()
+	server.ServeHTTP(rrCard, reqCard)
+	if !strings.Contains(rrCard.Body.String(), "MANUTENÇÃO") {
+		t.Errorf("expected card to display MANUTENÇÃO badge")
+	}
+
+	// 2. Nil storage must not panic on /api/events, /systems/erp/history, /systems/erp/export
+	for _, path := range []string{"/api/events", "/systems/erp/history", "/systems/erp/export?format=json"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rr := httptest.NewRecorder()
+		server.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Errorf("GET %s with nil storage returned %d, want 200", path, rr.Code)
+		}
 	}
 }

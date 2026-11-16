@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"argus/internal/checker"
 	"argus/internal/config"
 	"argus/internal/monitor"
+	"argus/internal/notify"
 	"argus/internal/storage"
 	"argus/internal/web"
 )
@@ -54,12 +56,36 @@ func main() {
 	// Initialize In-Memory Store
 	store := monitor.NewStore(cfg)
 
+	// Hydrate initial state from SQLite history
+	hydrateCtx, hydrateCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	for _, sys := range cfg.Systems {
+		if strings.TrimSpace(sys.URL) != "" {
+			if checks, err := db.GetRecentChecks(hydrateCtx, sys.ID, "dns", 120); err == nil && len(checks) > 0 {
+				lastEv, _ := db.GetLatestEventTime(hydrateCtx, sys.ID, "dns")
+				store.HydrateCheck(sys.ID, "dns", checks, lastEv)
+			}
+		}
+		if strings.TrimSpace(sys.IP) != "" {
+			if checks, err := db.GetRecentChecks(hydrateCtx, sys.ID, "ip", 120); err == nil && len(checks) > 0 {
+				lastEv, _ := db.GetLatestEventTime(hydrateCtx, sys.ID, "ip")
+				store.HydrateCheck(sys.ID, "ip", checks, lastEv)
+			}
+		}
+	}
+	hydrateCancel()
+
 	// Pipe check results and state transitions into SQLite
 	store.SubscribeChecks(func(sysID string, kind string, res checker.Result) {
 		db.AsyncSaveCheck(sysID, kind, res)
 	})
+	notifier := notify.New(cfg.Alerts)
+	if notifier.Enabled() {
+		log.Printf("[INFO] Central de notificações ativada (cooldown: %v)", cfg.Alerts.Cooldown)
+	}
+
 	store.SubscribeEvents(func(e monitor.ChangeEvent) {
 		db.AsyncSaveEvent(e)
+		notifier.HandleEvent(e)
 		log.Printf("[EVENT] %s (%s) mudou de %s para %s — Diagnóstico: %s (%s)",
 			e.SystemName, e.Kind, e.FromStatus, e.ToStatus, e.Diagnosis, e.Detail)
 	})
@@ -97,15 +123,38 @@ func main() {
 		}
 	}()
 
-	// Graceful shutdown handling
+	// Graceful shutdown & SIGHUP hot-reload handling
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
-	select {
-	case sig := <-sigCh:
-		log.Printf("[INFO] Sinal recebido (%v); encerrando Argus com segurança...", sig)
-	case err := <-serverErrCh:
-		log.Fatalf("[FATAL] Erro no servidor HTTP: %v", err)
+	reloadCh := make(chan os.Signal, 1)
+	signal.Notify(reloadCh, syscall.SIGHUP)
+
+loop:
+	for {
+		select {
+		case sig := <-sigCh:
+			log.Printf("[INFO] Sinal recebido (%v); encerrando Argus com segurança...", sig)
+			break loop
+		case <-reloadCh:
+			log.Printf("[INFO] SIGHUP recebido; recarregando configuração de %s...", configPath)
+			newCfg, reloadErr := config.Load(configPath)
+			if reloadErr != nil {
+				log.Printf("[WARN] Falha ao recarregar configuração (mantendo atual): %v", reloadErr)
+				continue
+			}
+			rootCancel()
+			scheduler.Stop()
+			store.ReloadConfig(newCfg)
+			notifier.UpdateConfig(newCfg.Alerts)
+			webServer.UpdateConfig(newCfg)
+			rootCtx, rootCancel = context.WithCancel(context.Background())
+			scheduler = monitor.NewScheduler(newCfg, store, httpChecker, pingChecker)
+			scheduler.Start(rootCtx)
+			log.Printf("[INFO] Configuração recarregada (%d sistemas)", len(newCfg.Systems))
+		case err := <-serverErrCh:
+			log.Fatalf("[FATAL] Erro no servidor HTTP: %v", err)
+		}
 	}
 
 	// 1. Stop scheduler and check loops

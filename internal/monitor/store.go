@@ -1,6 +1,8 @@
 package monitor
 
 import (
+	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -23,14 +25,16 @@ type checkState struct {
 	historyCount    int
 	failThreshold   int
 	degradedLatency time.Duration
+	tlsWarnDays     int
 }
 
-func newCheckState(configured bool, failThreshold int, degradedLatency time.Duration) *checkState {
+func newCheckState(configured bool, failThreshold int, degradedLatency time.Duration, tlsWarnDays int) *checkState {
 	return &checkState{
 		configured:      configured,
 		status:          StatusUnknown,
 		failThreshold:   failThreshold,
 		degradedLatency: degradedLatency,
+		tlsWarnDays:     tlsWarnDays,
 		history:         make([]checker.Result, ringBufferSize),
 	}
 }
@@ -47,36 +51,47 @@ func (cs *checkState) pushResult(res checker.Result) {
 	cs.lastResult = res
 }
 
-func (cs *checkState) uptime() float64 {
+func (cs *checkState) uptime(now time.Time) float64 {
 	if cs.historyCount == 0 {
 		return 100.0
 	}
+	cutoff := now.Add(-1 * time.Hour)
+	windowCount := 0
 	okCount := 0
 	for i := 0; i < cs.historyCount; i++ {
-		if cs.history[i].OK {
+		res := cs.history[i]
+		if res.CheckedAt.IsZero() || res.CheckedAt.Before(cutoff) {
+			continue
+		}
+		windowCount++
+		if res.OK {
 			okCount++
 		}
 	}
-	return (float64(okCount) / float64(cs.historyCount)) * 100.0
+	if windowCount == 0 {
+		return 100.0
+	}
+	return (float64(okCount) / float64(windowCount)) * 100.0
 }
 
-func (cs *checkState) snapshot() CheckSnapshot {
+func (cs *checkState) snapshot(now time.Time) CheckSnapshot {
 	return CheckSnapshot{
 		Configured:  cs.configured,
 		Status:      cs.status,
 		LastResult:  cs.lastResult,
 		LastChange:  cs.lastChange,
 		ConsecFails: cs.consecFails,
-		Uptime1h:    cs.uptime(),
+		Uptime1h:    cs.uptime(now),
 		HasHistory:  cs.historyCount > 0,
 	}
 }
 
 type systemState struct {
-	cfg     config.SystemConfig
-	dns     *checkState
-	ip      *checkState
-	lastRun time.Time
+	cfg           config.SystemConfig
+	dns           *checkState
+	ip            *checkState
+	inMaintenance bool
+	lastRun       time.Time
 }
 
 // Store maintains the live in-memory state of all systems.
@@ -107,17 +122,76 @@ func NewStore(cfg *config.Config) *Store {
 
 		hasDNS := strings.TrimSpace(sys.URL) != ""
 		hasIP := strings.TrimSpace(sys.IP) != ""
+		tlsWarnDays := sys.EffectiveTLSWarnDays(cfg.Defaults)
 
 		s.systems[sys.ID] = &systemState{
-			cfg:     sys,
-			dns:     newCheckState(hasDNS, failThresh, degLat),
-			ip:      newCheckState(hasIP, failThresh, degLat),
-			lastRun: time.Time{},
+			cfg:           sys,
+			dns:           newCheckState(hasDNS, failThresh, degLat, tlsWarnDays),
+			ip:            newCheckState(hasIP, failThresh, degLat, tlsWarnDays),
+			inMaintenance: sys.Maintenance,
+			lastRun:       time.Time{},
 		}
 		s.order = append(s.order, sys.ID)
 	}
 
 	return s
+}
+
+// SetMaintenance toggles maintenance mode for a system. Returns false if system not found.
+func (s *Store) SetMaintenance(sysID string, enabled bool) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sys, ok := s.systems[sysID]
+	if !ok {
+		return false
+	}
+	sys.inMaintenance = enabled
+	return true
+}
+
+// ReloadConfig updates systems from a new config while preserving in-memory check history for retained systems.
+func (s *Store) ReloadConfig(cfg *config.Config) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	newSystems := make(map[string]*systemState, len(cfg.Systems))
+	newOrder := make([]string, 0, len(cfg.Systems))
+
+	for _, sys := range cfg.Systems {
+		failThresh := sys.EffectiveFailThreshold(cfg.Defaults)
+		degLat := cfg.Defaults.DegradedLatency
+		if degLat <= 0 {
+			degLat = 2 * time.Second
+		}
+		hasDNS := strings.TrimSpace(sys.URL) != ""
+		hasIP := strings.TrimSpace(sys.IP) != ""
+		tlsWarnDays := sys.EffectiveTLSWarnDays(cfg.Defaults)
+
+		if existing, ok := s.systems[sys.ID]; ok {
+			existing.cfg = sys
+			existing.inMaintenance = sys.Maintenance
+			existing.dns.configured = hasDNS
+			existing.dns.failThreshold = failThresh
+			existing.dns.degradedLatency = degLat
+			existing.dns.tlsWarnDays = tlsWarnDays
+			existing.ip.configured = hasIP
+			existing.ip.failThreshold = failThresh
+			existing.ip.degradedLatency = degLat
+			existing.ip.tlsWarnDays = tlsWarnDays
+			newSystems[sys.ID] = existing
+		} else {
+			newSystems[sys.ID] = &systemState{
+				cfg:           sys,
+				dns:           newCheckState(hasDNS, failThresh, degLat, tlsWarnDays),
+				ip:            newCheckState(hasIP, failThresh, degLat, tlsWarnDays),
+				inMaintenance: sys.Maintenance,
+			}
+		}
+		newOrder = append(newOrder, sys.ID)
+	}
+
+	s.systems = newSystems
+	s.order = newOrder
 }
 
 // SubscribeEvents registers a callback for status change events.
@@ -142,6 +216,67 @@ func (s *Store) RecordDNSResult(sysID string, res checker.Result) {
 // RecordIPResult saves ICMP/TCP check results and evaluates status transitions.
 func (s *Store) RecordIPResult(sysID string, res checker.Result) {
 	s.recordResult(sysID, "ip", res)
+}
+
+func (cs *checkState) evaluateNextStatus(res checker.Result) Status {
+	if res.OK {
+		cs.consecFails = 0
+		if res.HasTLS && res.TLSDaysLeft < 0 {
+			return StatusDown
+		}
+		if (cs.degradedLatency > 0 && res.Latency > cs.degradedLatency) ||
+			res.Loss > 0 ||
+			(res.HasTLS && cs.tlsWarnDays > 0 && res.TLSDaysLeft < cs.tlsWarnDays) {
+			return StatusDegraded
+		}
+		return StatusUP
+	}
+	cs.consecFails++
+	if cs.consecFails >= cs.failThreshold {
+		return StatusDown
+	}
+	return StatusDegraded
+}
+
+// HydrateCheck pre-populates a check's ring buffer and status from historical results
+// (ordered oldest to newest) without triggering event or check subscribers.
+func (s *Store) HydrateCheck(sysID string, kind string, results []checker.Result, lastChange time.Time) {
+	if len(results) == 0 {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sys, ok := s.systems[sysID]
+	if !ok {
+		return
+	}
+
+	target := sys.ip
+	if kind == "dns" {
+		target = sys.dns
+	}
+	if target == nil || !target.configured {
+		return
+	}
+
+	for _, res := range results {
+		target.pushResult(res)
+		target.status = target.evaluateNextStatus(res)
+		if res.CheckedAt.After(s.lastCheckTime) {
+			s.lastCheckTime = res.CheckedAt
+		}
+		if res.CheckedAt.After(sys.lastRun) {
+			sys.lastRun = res.CheckedAt
+		}
+	}
+
+	if !lastChange.IsZero() {
+		target.lastChange = lastChange
+	} else if !target.lastResult.CheckedAt.IsZero() {
+		target.lastChange = target.lastResult.CheckedAt
+	}
 }
 
 func (s *Store) recordResult(sysID string, kind string, res checker.Result) {
@@ -173,41 +308,27 @@ func (s *Store) recordResult(sysID string, kind string, res checker.Result) {
 
 	target.pushResult(res)
 	oldStatus := target.status
-	newStatus := oldStatus
-
-	if res.OK {
-		target.consecFails = 0
-		if (target.degradedLatency > 0 && res.Latency > target.degradedLatency) || res.Loss > 0 {
-			newStatus = StatusDegraded
-		} else {
-			newStatus = StatusUP
-		}
-	} else {
-		target.consecFails++
-		if target.consecFails >= target.failThreshold {
-			newStatus = StatusDown
-		} else {
-			newStatus = StatusDegraded
-		}
-	}
+	newStatus := target.evaluateNextStatus(res)
 
 	if newStatus != oldStatus {
 		target.status = newStatus
 		target.lastChange = res.CheckedAt
 
-		dnsSnap := sys.dns.snapshot()
-		ipSnap := sys.ip.snapshot()
+		now := time.Now()
+		dnsSnap := sys.dns.snapshot(now)
+		ipSnap := sys.ip.snapshot(now)
 		summary, detail := Diagnose(&dnsSnap, &ipSnap)
 
 		event = &ChangeEvent{
-			SystemID:   sys.cfg.ID,
-			SystemName: sys.cfg.Name,
-			Kind:       kind,
-			FromStatus: oldStatus,
-			ToStatus:   newStatus,
-			Diagnosis:  summary,
-			Detail:     detail,
-			OccurredAt: res.CheckedAt,
+			SystemID:      sys.cfg.ID,
+			SystemName:    sys.cfg.Name,
+			Kind:          kind,
+			FromStatus:    oldStatus,
+			ToStatus:      newStatus,
+			Diagnosis:     summary,
+			Detail:        detail,
+			InMaintenance: sys.inMaintenance,
+			OccurredAt:    res.CheckedAt,
 		}
 	}
 
@@ -302,16 +423,21 @@ func (s *Store) GetStats() StatsSnapshot {
 }
 
 func (s *Store) buildSnapshot(sys *systemState) SystemSnapshot {
-	dnsSnap := sys.dns.snapshot()
-	ipSnap := sys.ip.snapshot()
+	now := time.Now()
+	dnsSnap := sys.dns.snapshot(now)
+	ipSnap := sys.ip.snapshot(now)
 
 	worst := StatusUnknown
+	uptime1h := 100.0
 	if dnsSnap.Configured && ipSnap.Configured {
 		worst = WorstStatus(dnsSnap.Status, ipSnap.Status)
+		uptime1h = math.Min(dnsSnap.Uptime1h, ipSnap.Uptime1h)
 	} else if dnsSnap.Configured {
 		worst = dnsSnap.Status
+		uptime1h = dnsSnap.Uptime1h
 	} else if ipSnap.Configured {
 		worst = ipSnap.Status
+		uptime1h = ipSnap.Uptime1h
 	}
 
 	diagSummary, _ := Diagnose(&dnsSnap, &ipSnap)
@@ -349,13 +475,17 @@ func (s *Store) buildSnapshot(sys *systemState) SystemSnapshot {
 	return SystemSnapshot{
 		ID:             sys.cfg.ID,
 		Name:           sys.cfg.Name,
+		Group:          sys.cfg.Group,
+		Tags:           sys.cfg.Tags,
 		URL:            sys.cfg.URL,
 		IP:             sys.cfg.IP,
 		IsIPHTTP:       sys.cfg.IsIPHTTP(),
 		TCPPort:        sys.cfg.TCPPort,
 		WorstStatus:    worst,
 		Diagnosis:      diagSummary,
+		InMaintenance:  sys.inMaintenance,
 		DownDuration:   downDuration,
+		Uptime1h:       uptime1h,
 		LastCheckedAt:  lastChecked,
 		LastChange:     lastChange,
 		DNS:            dnsSnap,
@@ -409,7 +539,7 @@ func buildHeartbeat(sys *systemState) []HeartbeatTick {
 		}
 
 		st := StatusUP
-		tooltip := "Operacional"
+		var tooltip string
 		var latency time.Duration
 
 		if dnsRes != nil {
@@ -417,6 +547,8 @@ func buildHeartbeat(sys *systemState) []HeartbeatTick {
 			if !dnsRes.OK {
 				st = StatusDown
 				tooltip = dnsRes.Error
+			} else if sys.dns.degradedLatency > 0 && dnsRes.Latency > sys.dns.degradedLatency {
+				st = StatusDegraded
 			}
 		}
 		if ipRes != nil {
@@ -425,7 +557,22 @@ func buildHeartbeat(sys *systemState) []HeartbeatTick {
 			}
 			if !ipRes.OK {
 				st = StatusDown
-				tooltip = ipRes.Error
+				if tooltip == "" {
+					tooltip = ipRes.Error
+				}
+			} else if st != StatusDown && (ipRes.Loss > 0 || (sys.ip.degradedLatency > 0 && ipRes.Latency > sys.ip.degradedLatency)) {
+				st = StatusDegraded
+			}
+		}
+
+		switch st {
+		case StatusUP:
+			tooltip = fmt.Sprintf("Operacional (%dms)", latency.Milliseconds())
+		case StatusDegraded:
+			tooltip = fmt.Sprintf("Instável (%dms)", latency.Milliseconds())
+		case StatusDown:
+			if tooltip == "" {
+				tooltip = "Fora do ar"
 			}
 		}
 

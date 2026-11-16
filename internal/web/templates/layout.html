@@ -37,6 +37,15 @@
         <button class="chip" data-filter="degraded">Instável</button>
         <button class="chip" data-filter="up">Operacional</button>
       </div>
+
+      {{if .Groups}}
+      <select id="group-filter" class="group-select" aria-label="Filtrar por grupo">
+        <option value="all">Todos os grupos</option>
+        {{range .Groups}}
+          <option value="{{.}}">{{.}}</option>
+        {{end}}
+      </select>
+      {{end}}
     </div>
     {{end}}
 
@@ -45,6 +54,16 @@
         <span class="live-dot" id="live-dot"></span>
         <span>Ao vivo</span>
       </div>
+
+      {{if not .HideSearch}}
+      <button class="btn-icon" id="view-toggle-btn" title="Alternar visualização Cards / Compacto" aria-label="Visualização compacta">
+        <svg class="icon"><use href="#icon-list"></use></svg>
+      </button>
+      {{end}}
+
+      <button class="btn-icon" id="sound-toggle-btn" title="Alerta sonoro (Silenciado)" aria-label="Alerta sonoro">
+        <svg class="icon"><use href="#icon-bell-off"></use></svg>
+      </button>
 
       <button class="btn-icon" id="tv-toggle-btn" title="Modo TV / Sala de Operações" aria-label="Modo TV">
         <svg class="icon"><use href="#icon-tv"></use></svg>

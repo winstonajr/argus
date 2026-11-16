@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"time"
+
+	"argus/internal/checker"
 )
 
 // ListEvents retrieves status change events for a system ordered descending by time.
@@ -107,6 +110,11 @@ LIMIT ? OFFSET ?
 
 // GetTimelineBuckets computes slice of time buckets and their worst status.
 func (d *DB) GetTimelineBuckets(ctx context.Context, sysID string, from, to time.Time, bucketCount int) ([]TimelineBucket, error) {
+	return d.GetTimelineBucketsWithLatency(ctx, sysID, from, to, bucketCount, 2000)
+}
+
+// GetTimelineBucketsWithLatency computes time buckets marking DEGRADED when latency exceeds degradedLatencyMs.
+func (d *DB) GetTimelineBucketsWithLatency(ctx context.Context, sysID string, from, to time.Time, bucketCount int, degradedLatencyMs int64) ([]TimelineBucket, error) {
 	if bucketCount <= 0 {
 		bucketCount = 60
 	}
@@ -132,7 +140,7 @@ func (d *DB) GetTimelineBuckets(ctx context.Context, sysID string, from, to time
 
 	// Fetch all checks in range
 	query := `
-SELECT kind, ok, COALESCE(loss_pct, 0), checked_at
+SELECT kind, ok, COALESCE(latency_ms, 0), COALESCE(loss_pct, 0), checked_at
 FROM checks
 WHERE system_id = ? AND checked_at >= ? AND checked_at <= ?
 ORDER BY checked_at ASC
@@ -146,10 +154,11 @@ ORDER BY checked_at ASC
 	for rows.Next() {
 		var kind string
 		var okInt int
+		var latencyMs int64
 		var loss float64
 		var checkStr string
 
-		if err := rows.Scan(&kind, &okInt, &loss, &checkStr); err != nil {
+		if err := rows.Scan(&kind, &okInt, &latencyMs, &loss, &checkStr); err != nil {
 			return nil, fmt.Errorf("scan check for timeline: %w", err)
 		}
 
@@ -171,11 +180,13 @@ ORDER BY checked_at ASC
 		if kind == "dns" {
 			if okInt == 0 {
 				b.DNSStatus = "DOWN"
+			} else if degradedLatencyMs > 0 && latencyMs > degradedLatencyMs && b.DNSStatus != "DOWN" {
+				b.DNSStatus = "DEGRADED"
 			}
 		} else if kind == "ip" {
 			if okInt == 0 {
 				b.IPStatus = "DOWN"
-			} else if loss > 0 && b.IPStatus != "DOWN" {
+			} else if (loss > 0 || (degradedLatencyMs > 0 && latencyMs > degradedLatencyMs)) && b.IPStatus != "DOWN" {
 				b.IPStatus = "DEGRADED"
 			}
 		}
@@ -230,7 +241,178 @@ WHERE system_id = ? AND to_status = 'DOWN' AND occurred_at >= ? AND occurred_at 
 		return stats, fmt.Errorf("count incidents: %w", err)
 	}
 
+	// Calculate Avg and P95 latency for successful checks
+	latQuery := `
+SELECT COALESCE(latency_ms, 0)
+FROM checks
+WHERE system_id = ? AND ok = 1 AND checked_at >= ? AND checked_at <= ?
+ORDER BY latency_ms ASC
+`
+	latRows, err := d.db.QueryContext(ctx, latQuery, sysID, from.UTC(), to.UTC())
+	if err == nil {
+		defer latRows.Close()
+		var latencies []int64
+		var sumLat int64
+		for latRows.Next() {
+			var lat int64
+			if scanErr := latRows.Scan(&lat); scanErr == nil {
+				latencies = append(latencies, lat)
+				sumLat += lat
+			}
+		}
+		if len(latencies) > 0 {
+			sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
+			stats.AvgLatencyMs = sumLat / int64(len(latencies))
+			p95Idx := int(float64(len(latencies)-1) * 0.95)
+			stats.P95LatencyMs = latencies[p95Idx]
+		}
+	}
+
+	// Calculate MTTR & MTBF from events in range
+	if events, evErr := d.ListEvents(ctx, sysID, from, to, 500); evErr == nil && len(events) > 0 {
+		var totalDown time.Duration
+		var resolvedCount int
+		for _, ev := range events {
+			if ev.Duration > 0 {
+				totalDown += ev.Duration
+				resolvedCount++
+				if ev.Duration > stats.MaxDownDuration {
+					stats.MaxDownDuration = ev.Duration
+				}
+			}
+		}
+		if resolvedCount > 0 {
+			stats.MTTR = totalDown / time.Duration(resolvedCount)
+		}
+		if stats.IncidentCount > 0 {
+			periodDur := to.Sub(from)
+			upTime := periodDur - totalDown
+			if upTime > 0 {
+				stats.MTBF = upTime / time.Duration(stats.IncidentCount)
+			}
+		}
+	}
+
 	return stats, nil
+}
+
+// ListAllRecentEvents retrieves the most recent status transition events across all systems.
+func (d *DB) ListAllRecentEvents(ctx context.Context, limit int) ([]StoredEvent, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	query := `
+SELECT id, system_id, kind, from_status, to_status, COALESCE(diagnosis, ''), COALESCE(detail, ''), occurred_at
+FROM events
+ORDER BY occurred_at DESC
+LIMIT ?
+`
+	rows, err := d.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query all recent events: %w", err)
+	}
+	defer rows.Close()
+
+	var events []StoredEvent
+	for rows.Next() {
+		var ev StoredEvent
+		var occStr string
+		if err := rows.Scan(
+			&ev.ID,
+			&ev.SystemID,
+			&ev.Kind,
+			&ev.FromStatus,
+			&ev.ToStatus,
+			&ev.Diagnosis,
+			&ev.Detail,
+			&occStr,
+		); err != nil {
+			return nil, fmt.Errorf("scan event: %w", err)
+		}
+		ev.OccurredAt, _ = parseTime(occStr)
+		events = append(events, ev)
+	}
+	return events, rows.Err()
+}
+
+// GetRecentChecks retrieves the most recent checks for a system and kind, ordered oldest-to-newest.
+func (d *DB) GetRecentChecks(ctx context.Context, sysID, kind string, limit int) ([]checker.Result, error) {
+	if limit <= 0 {
+		limit = 120
+	}
+
+	query := `
+SELECT ok, COALESCE(status_code, 0), COALESCE(latency_ms, 0), COALESCE(loss_pct, 0),
+       COALESCE(error_cat, ''), COALESCE(error_msg, ''), checked_at
+FROM checks
+WHERE system_id = ? AND kind = ?
+ORDER BY checked_at DESC
+LIMIT ?
+`
+	rows, err := d.db.QueryContext(ctx, query, sysID, kind, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query recent checks: %w", err)
+	}
+	defer rows.Close()
+
+	var results []checker.Result
+	for rows.Next() {
+		var okInt int
+		var statusCode int
+		var latencyMs int64
+		var lossPct float64
+		var errCat, errMsg, checkStr string
+
+		if err := rows.Scan(&okInt, &statusCode, &latencyMs, &lossPct, &errCat, &errMsg, &checkStr); err != nil {
+			return nil, fmt.Errorf("scan recent check: %w", err)
+		}
+
+		checkedAt, _ := parseTime(checkStr)
+		results = append(results, checker.Result{
+			OK:         okInt == 1,
+			StatusCode: statusCode,
+			Latency:    time.Duration(latencyMs) * time.Millisecond,
+			Loss:       lossPct,
+			ErrorCat:   errCat,
+			Error:      errMsg,
+			CheckedAt:  checkedAt.Local(),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Reverse to chronological order (oldest first)
+	for i, j := 0, len(results)-1; i < j; i, j = i+1, j-1 {
+		results[i], results[j] = results[j], results[i]
+	}
+
+	return results, nil
+}
+
+// GetLatestEventTime returns the timestamp of the most recent status transition for a system/kind.
+func (d *DB) GetLatestEventTime(ctx context.Context, sysID, kind string) (time.Time, error) {
+	query := `
+SELECT occurred_at
+FROM events
+WHERE system_id = ? AND kind = ?
+ORDER BY occurred_at DESC
+LIMIT 1
+`
+	var occStr string
+	err := d.db.QueryRowContext(ctx, query, sysID, kind).Scan(&occStr)
+	if err == sql.ErrNoRows {
+		return time.Time{}, nil
+	}
+	if err != nil {
+		return time.Time{}, fmt.Errorf("query latest event time: %w", err)
+	}
+	t, err := parseTime(occStr)
+	if err != nil {
+		return time.Time{}, nil
+	}
+	return t.Local(), nil
 }
 
 func parseTime(s string) (time.Time, error) {
