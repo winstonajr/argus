@@ -1,24 +1,26 @@
 # Argus
 
+English | [Português](README.pt-BR.md)
+
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square&logo=go)](https://golang.org)
 [![Docker Pulls](https://img.shields.io/docker/pulls/winajr/argus?style=flat-square&color=blue)](https://hub.docker.com/r/winajr/argus)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 
-Monitor de disponibilidade e saúde para sistemas internos, servidores e serviços em nuvem, construído em Go com interface estilo NOC, armazenamento SQLite embutido e atualizações em tempo real via Server-Sent Events (SSE).
+Lightweight availability and health-check monitor for internal systems, servers, and cloud services, built in Go with a NOC-style interface, embedded SQLite storage, and real-time Server-Sent Events (SSE).
 
-## Recursos
+## Features
 
-- **Verificação em duas camadas**: testa endpoints DNS/HTTP (métodos configuráveis, headers customizados, `expected_status`, `expected_body`, `json_path` e `expected_dns`) e conectividade direta no host (ICMP ping, porta TCP ou HTTP interno).
-- **Diagnóstico automático**: correlaciona os resultados para distinguir falhas de DNS, erros de certificado TLS, borda Cloudflare (`502`, `520`–`526`), indisponibilidade da aplicação ou queda de VM/rede.
-- **Monitoramento SSL/TLS**: verifica a validade de certificados HTTPS e sinaliza `DEGRADED` antes do vencimento (`tls_warn_days`) e `DOWN` após expirar.
-- **Tempo real via SSE**: atualização instantânea dos cards (`/events`), reordenação automática por severidade, barra de 30 heartbeats e sparkline de latência.
-- **Notificações**: envio de alertas de queda e recuperação via Webhook genérico, Slack, Discord, Telegram e E-mail (SMTP), com controle de *cooldown* e supressão em modo de manutenção.
-- **Histórico e SLA**: persistência em SQLite (WAL) com hidratação no restart, linha do tempo (1h, 24h, 7d, 30d), cálculo de MTBF/MTTR/P95 e exportação em CSV/JSON.
-- **Operação e observabilidade**: tema claro/escuro, grupos, modo compacto, modo TV (`?view=tv`), página pública somente leitura (`/status`), métricas Prometheus (`/metrics`) e hot reload via `SIGHUP`.
+- **Cross-layer checks**: tests DNS/HTTP endpoints (configurable HTTP methods, custom headers, `expected_status`, `expected_body`, `json_path`, and `expected_dns`) alongside direct host reachability (ICMP ping, TCP port, or internal HTTP).
+- **Root-cause diagnosis**: correlates check states to distinguish DNS failures, TLS certificate errors, Cloudflare edge errors (`502`, `520`–`526`), application outages, or full VM/network downtime.
+- **SSL/TLS monitoring**: inspects HTTPS certificate expiration and flags `DEGRADED` ahead of expiry (`tls_warn_days`) and `DOWN` once expired.
+- **Real-time updates via SSE**: instant card updates (`/events`), automatic severity-based sorting, 30-slot heartbeat bar, and latency sparkline.
+- **Notifications**: outage and recovery alerts via generic Webhook, Slack, Discord, Telegram, and Email (SMTP), with cooldown control and maintenance suppression.
+- **History & SLA**: embedded SQLite (WAL mode) with startup state hydration, 1h/24h/7d/30d timelines, MTBF/MTTR/P95 metrics, and CSV/JSON export.
+- **Operations & observability**: dark/light themes, system groups, compact table view, TV mode (`?view=tv`), read-only public status page (`/status`), Prometheus metrics (`/metrics`), and `SIGHUP` hot config reload.
 
-## Início Rápido
+## Quick Start
 
-### Docker Compose (Recomendado)
+### Docker Compose (Recommended)
 
 ```bash
 git clone https://github.com/winstonajr/argus.git && cd argus
@@ -27,7 +29,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Acesse `http://localhost:8080`.
+Open `http://localhost:8080`.
 
 ### Docker
 
@@ -41,62 +43,62 @@ docker run -d \
   winajr/argus:latest
 ```
 
-### Executando com Go
+### Running with Go
 
-Pré-requisitos:
+Prerequisites:
 - Go 1.22+
-- Permissão de socket raw para ping ICMP no Linux (opcional se usar apenas HTTP/TCP):
+- Raw socket capability for ICMP ping on Linux (optional if using HTTP/TCP checks only):
   ```bash
   sudo setcap cap_net_raw+ep ./bin/argus
-  # ou para o grupo de usuários:
+  # or allow for the user group:
   sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
   ```
 
-Execução:
+Run:
 ```bash
 go run ./cmd/argus -config config.example.yaml
 
-# ou compilando o binário:
+# or build the binary:
 make build
 ./bin/argus -config config.example.yaml
 ```
 
-## Configuração
+## Configuration
 
-A precedência de configuração segue: **Variáveis de Ambiente > Arquivo YAML > Padrões Embutidos**.
+Configuration precedence: **Environment Variables > YAML File > Built-in Defaults**.
 
-### Variáveis de Ambiente
+### Environment Variables
 
-| Variável | Padrão | Descrição |
+| Variable | Default | Description |
 |---|---|---|
-| `ARGUS_SERVER_ADDR` | `:8080` | Endereço e porta HTTP (ou `PORT=8080`) |
-| `ARGUS_CONFIG_PATH` | `./config.yaml` | Caminho do arquivo de configuração YAML |
-| `ARGUS_STORAGE_PATH` | `./data/argus.db` | Caminho do banco SQLite |
-| `ARGUS_STORAGE_RETENTION_CHECKS` | `168h` | Retenção de logs de checagens |
-| `ARGUS_STORAGE_RETENTION_EVENTS` | `2160h` | Retenção do histórico de incidentes |
-| `ARGUS_DEFAULTS_INTERVAL` | `30s` | Intervalo padrão entre checagens |
-| `ARGUS_DEFAULTS_HTTP_TIMEOUT` | `5s` | Timeout para requisições HTTP |
-| `ARGUS_DEFAULTS_PING_TIMEOUT` | `3s` | Timeout para ping ICMP / TCP |
-| `ARGUS_DEFAULTS_FAIL_THRESHOLD` | `2` | Falhas consecutivas para marcar `DOWN` |
-| `ARGUS_DEFAULTS_DEGRADED_LATENCY` | `2s` | Limite de latência para `DEGRADED` |
-| `ARGUS_DEFAULTS_TLS_WARN_DAYS` | `15` | Dias antes do vencimento SSL/TLS para alertar `DEGRADED` |
-| `ARGUS_ALERTS_COOLDOWN` | `5m` | Intervalo mínimo entre alertas repetidos |
-| `ARGUS_ALERTS_NOTIFY_ON_DEGRADED` | `false` | Enviar alertas em transições `DEGRADED` |
-| `ARGUS_ALERTS_WEBHOOK_URL` | — | URL de Webhook genérico (JSON POST) |
-| `ARGUS_ALERTS_SLACK_WEBHOOK_URL` | — | Incoming Webhook URL do Slack |
-| `ARGUS_ALERTS_DISCORD_WEBHOOK_URL` | — | Webhook URL do Discord |
-| `ARGUS_ALERTS_TELEGRAM_BOT_TOKEN` | — | Token do Bot do Telegram |
-| `ARGUS_ALERTS_TELEGRAM_CHAT_ID` | — | ID do chat/grupo do Telegram |
-| `ARGUS_ALERTS_EMAIL_SMTP_HOST` | — | Host do servidor SMTP |
-| `ARGUS_ALERTS_EMAIL_SMTP_PORT` | `587` | Porta SMTP |
-| `ARGUS_ALERTS_EMAIL_USERNAME` | — | Usuário SMTP |
-| `ARGUS_ALERTS_EMAIL_PASSWORD` | — | Senha SMTP |
-| `ARGUS_ALERTS_EMAIL_FROM` | — | Remetente dos alertas |
-| `ARGUS_ALERTS_EMAIL_TO` | — | Destinatários separados por vírgula |
+| `ARGUS_SERVER_ADDR` | `:8080` | HTTP listen address and port (or `PORT=8080`) |
+| `ARGUS_CONFIG_PATH` | `./config.yaml` | Path to YAML configuration file |
+| `ARGUS_STORAGE_PATH` | `./data/argus.db` | SQLite database file path |
+| `ARGUS_STORAGE_RETENTION_CHECKS` | `168h` | Retention window for raw check logs |
+| `ARGUS_STORAGE_RETENTION_EVENTS` | `2160h` | Retention window for incident events |
+| `ARGUS_DEFAULTS_INTERVAL` | `30s` | Default check interval |
+| `ARGUS_DEFAULTS_HTTP_TIMEOUT` | `5s` | HTTP request timeout |
+| `ARGUS_DEFAULTS_PING_TIMEOUT` | `3s` | ICMP / TCP ping timeout |
+| `ARGUS_DEFAULTS_FAIL_THRESHOLD` | `2` | Consecutive failures to mark `DOWN` |
+| `ARGUS_DEFAULTS_DEGRADED_LATENCY` | `2s` | Latency threshold for `DEGRADED` |
+| `ARGUS_DEFAULTS_TLS_WARN_DAYS` | `15` | Days before TLS expiry to flag `DEGRADED` |
+| `ARGUS_ALERTS_COOLDOWN` | `5m` | Minimum interval between repeated alerts |
+| `ARGUS_ALERTS_NOTIFY_ON_DEGRADED` | `false` | Send notifications on `DEGRADED` transitions |
+| `ARGUS_ALERTS_WEBHOOK_URL` | — | Generic JSON POST Webhook URL |
+| `ARGUS_ALERTS_SLACK_WEBHOOK_URL` | — | Slack Incoming Webhook URL |
+| `ARGUS_ALERTS_DISCORD_WEBHOOK_URL` | — | Discord Webhook URL |
+| `ARGUS_ALERTS_TELEGRAM_BOT_TOKEN` | — | Telegram Bot Token |
+| `ARGUS_ALERTS_TELEGRAM_CHAT_ID` | — | Telegram chat/group ID |
+| `ARGUS_ALERTS_EMAIL_SMTP_HOST` | — | SMTP server host |
+| `ARGUS_ALERTS_EMAIL_SMTP_PORT` | `587` | SMTP server port |
+| `ARGUS_ALERTS_EMAIL_USERNAME` | — | SMTP username |
+| `ARGUS_ALERTS_EMAIL_PASSWORD` | — | SMTP password |
+| `ARGUS_ALERTS_EMAIL_FROM` | — | Alert sender email address |
+| `ARGUS_ALERTS_EMAIL_TO` | — | Comma-separated recipient email addresses |
 
-### Interpolação no `config.yaml`
+### Variable Interpolation in `config.yaml`
 
-O arquivo YAML suporta `${VAR}` e `${VAR:-fallback}`:
+The YAML file supports `${VAR}` and `${VAR:-fallback}` syntax:
 
 ```yaml
 server:
@@ -107,63 +109,63 @@ storage:
 
 systems:
   - id: "erp"
-    name: "ERP Corporativo"
-    group: "Produção"
-    url: "${ERP_URL:-https://erp.empresa.local/health}"
+    name: "Corporate ERP"
+    group: "Production"
+    url: "${ERP_URL:-https://erp.company.local/health}"
     ip: "${ERP_INTERNAL_IP:-10.0.0.15}"
 ```
 
 ### Hot Reload
 
-Recarregue o `config.yaml` sem derrubar o servidor ou perder o histórico em memória:
+Reload `config.yaml` without restarting the server or losing in-memory history:
 
 ```bash
 docker kill -s HUP argus
-# ou localmente:
+# or locally:
 kill -HUP $(pidof argus)
 ```
 
 ## Endpoints
 
-| Rota | Descrição |
+| Route | Description |
 |---|---|
-| `GET /` | Painel de operações NOC |
-| `GET /status` | Página de status pública (oculta IPs internos) |
-| `GET /systems/{id}/history` | Histórico, linha do tempo e métricas (1h, 24h, 7d, 30d) |
-| `GET /systems/{id}/export` | Exportação de histórico (`?period=30d&format=csv` ou `json`) |
-| `GET /api/systems` | Lista de sistemas em JSON |
-| `GET /api/systems/{id}` | Detalhes de um sistema em JSON |
-| `GET /api/events` | Eventos recentes de mudança de estado |
-| `POST /api/systems/{id}/maintenance` | Alterna modo de manutenção em runtime |
-| `GET /metrics` | Métricas no formato Prometheus |
-| `GET /healthz` | Healthcheck da aplicação e banco SQLite |
+| `GET /` | NOC operations dashboard |
+| `GET /status` | Public read-only status page (hides internal IPs) |
+| `GET /systems/{id}/history` | History, timeline, and SLA metrics (1h, 24h, 7d, 30d) |
+| `GET /systems/{id}/export` | Export history (`?period=30d&format=csv` or `json`) |
+| `GET /api/systems` | List all systems in JSON |
+| `GET /api/systems/{id}` | Single system details in JSON |
+| `GET /api/events` | Recent status change events |
+| `POST /api/systems/{id}/maintenance` | Toggle maintenance mode at runtime |
+| `GET /metrics` | Prometheus metrics |
+| `GET /healthz` | Application and SQLite healthcheck |
 
-## Atalhos de Teclado
+## Keyboard Shortcuts
 
-- `/` : focar no campo de busca.
-- `Esc` : limpar busca e desfocar.
-- `1` : filtrar todos os sistemas.
-- `2` : filtrar sistemas fora do ar (`DOWN`).
-- `3` : filtrar sistemas instáveis (`DEGRADED`).
-- `4` : filtrar sistemas operacionais (`UP`).
-- `t` : alternar tema escuro/claro.
-- `v` : alternar modo TV.
+- `/` : focus search input.
+- `Esc` : clear search and blur.
+- `1` : filter all systems.
+- `2` : filter `DOWN` systems.
+- `3` : filter `DEGRADED` systems.
+- `4` : filter `UP` systems.
+- `t` : toggle dark/light theme.
+- `v` : toggle TV mode.
 
-## Desenvolvimento e Testes
+## Development and Testing
 
 ```bash
 go test -v -race ./...
 go vet ./...
 ```
 
-## Contribuição
+## Contributing
 
-O projeto segue **GitFlow** e [Conventional Commits](https://www.conventionalcommits.org/):
+This project follows **GitFlow** and [Conventional Commits](https://www.conventionalcommits.org/):
 
-- Branches principais: `main` (releases) e `develop` (integração).
-- Branches de trabalho: `feature/*`, `fix/*`, `docs/*`, `ci/*`, `chore/*`.
-- Formato de commit: `<tipo>(escopo): descrição curta no imperativo` (ex.: `feat(notify): add slack webhook`, `fix(web): remove click interception on cards`).
+- Primary branches: `main` (releases) and `develop` (integration).
+- Working branches: `feature/*`, `fix/*`, `docs/*`, `ci/*`, `chore/*`.
+- Commit format: `<type>(scope): short imperative description` (e.g., `feat(notify): add slack webhook`, `fix(web): remove click interception on cards`).
 
-## Licença
+## License
 
-Distribuído sob a licença **MIT**. Consulte o arquivo [LICENSE](LICENSE) para mais detalhes.
+Distributed under the **MIT** License. See [LICENSE](LICENSE) for more information.
