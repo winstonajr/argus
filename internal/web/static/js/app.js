@@ -21,12 +21,12 @@
   function initTVMode() {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('view') === 'tv') {
-      document.body.classList.add('tv-mode');
+      document.documentElement.classList.add('tv-mode');
     }
   }
 
   function toggleTVMode() {
-    document.body.classList.toggle('tv-mode');
+    document.documentElement.classList.toggle('tv-mode');
   }
 
   // 3. Search, Status and Group Filter
@@ -55,21 +55,15 @@
   }
 
   function initViewMode() {
-    const grid = document.getElementById('cards-grid');
     const btn = document.getElementById('view-toggle-btn');
-    if (!grid) return;
-    const saved = localStorage.getItem('argus-view');
-    if (saved === 'compact') {
-      grid.classList.add('cards-grid--compact');
-      if (btn) btn.classList.add('active');
-    }
+    const isCompact = localStorage.getItem('argus-view') === 'compact';
+    document.documentElement.classList.toggle('view-compact', isCompact);
+    if (btn) btn.classList.toggle('active', isCompact);
   }
 
   function toggleViewMode() {
-    const grid = document.getElementById('cards-grid');
     const btn = document.getElementById('view-toggle-btn');
-    if (!grid) return;
-    const isCompact = grid.classList.toggle('cards-grid--compact');
+    const isCompact = document.documentElement.classList.toggle('view-compact');
     if (btn) btn.classList.toggle('active', isCompact);
     localStorage.setItem('argus-view', isCompact ? 'compact' : 'cards');
   }
@@ -86,8 +80,7 @@
     applyFilters();
   }
 
-  // 4. Dynamic Reordering & Sound Alert (NOC)
-  const STATUS_RANK = { down: 3, degraded: 2, unknown: 1, up: 0 };
+  // 4. Sound Alert (NOC)
   const prevStatuses = new Map();
   let soundEnabled = false;
   let audioCtx = null;
@@ -158,36 +151,7 @@
     if (prev && prev !== 'down' && prev !== 'unknown' && status === 'down') {
       playDownAlert();
     }
-    if (!card.classList.contains('card--skeleton')) {
-      prevStatuses.set(id, status);
-    }
-  }
-
-  function reorderCards() {
-    const grid = document.getElementById('cards-grid');
-    if (!grid) return;
-    const cards = Array.from(grid.querySelectorAll('.card[data-system-id]'));
-    if (cards.length < 2) return;
-
-    const sorted = cards.slice().sort((a, b) => {
-      const sa = STATUS_RANK[(a.getAttribute('data-status') || 'unknown').toLowerCase()] ?? 1;
-      const sb = STATUS_RANK[(b.getAttribute('data-status') || 'unknown').toLowerCase()] ?? 1;
-      if (sa !== sb) return sb - sa;
-      const na = (a.getAttribute('data-name') || '').toLowerCase();
-      const nb = (b.getAttribute('data-name') || '').toLowerCase();
-      return na.localeCompare(nb);
-    });
-
-    let changed = false;
-    for (let i = 0; i < sorted.length; i++) {
-      if (cards[i] !== sorted[i]) {
-        changed = true;
-        break;
-      }
-    }
-    if (changed) {
-      sorted.forEach(card => grid.appendChild(card));
-    }
+    prevStatuses.set(id, status);
   }
 
   function updateTabTitleFromStats() {
@@ -213,7 +177,6 @@
     if (evt.detail.target.classList && evt.detail.target.classList.contains('card')) {
       checkTransitionAndNotify(evt.detail.target);
       applyFilters();
-      reorderCards();
     }
   });
 
@@ -273,7 +236,6 @@
         if (window.htmx) htmx.process(nextCard);
         checkTransitionAndNotify(nextCard);
         applyFilters();
-        reorderCards();
       } catch (_) {}
     });
 
@@ -350,12 +312,24 @@
     }
   });
 
+  function seedInitialStatuses() {
+    document.querySelectorAll('.card[data-system-id]').forEach(card => {
+      const id = card.getAttribute('data-system-id');
+      const status = (card.getAttribute('data-status') || '').toLowerCase();
+      if (id && status) {
+        prevStatuses.set(id, status);
+      }
+    });
+  }
+
   // Initialize
   window.addEventListener('DOMContentLoaded', function() {
     initTheme();
     initTVMode();
     initViewMode();
     initSound();
+    seedInitialStatuses();
+    updateTabTitleFromStats();
     initSSE();
 
     const themeBtn = document.getElementById('theme-toggle-btn');

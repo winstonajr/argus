@@ -71,8 +71,8 @@ func TestServer_Endpoints(t *testing.T) {
 	if !strings.Contains(body, "ERP Corporativo") {
 		t.Errorf("expected body to contain 'ERP Corporativo'")
 	}
-	if !strings.Contains(body, "hx-get=\"/cards/erp\"") {
-		t.Errorf("expected body to contain HTMX card trigger")
+	if !strings.Contains(body, "id=\"card-erp\"") {
+		t.Errorf("expected body to contain rendered card 'card-erp'")
 	}
 
 	// 2. GET /cards/erp (partial HTMX card)
@@ -157,12 +157,12 @@ func TestServer_CardDiagnosisSlot(t *testing.T) {
 	server, store, db := setupTestServer(t)
 	defer db.Close()
 
-	// 1. Index page includes skeleton diagnosis slot
+	// 1. Index page renders real diagnosis slot directly (unknown when no results yet)
 	reqIndex := httptest.NewRequest(http.MethodGet, "/", nil)
 	rrIndex := httptest.NewRecorder()
 	server.ServeHTTP(rrIndex, reqIndex)
-	if !strings.Contains(rrIndex.Body.String(), "card__diagnosis-slot--skeleton") {
-		t.Errorf("expected index to include skeleton diagnosis slot")
+	if !strings.Contains(rrIndex.Body.String(), "card__diagnosis-slot--unknown") {
+		t.Errorf("expected index to include unknown diagnosis slot")
 	}
 
 	// 2. UNKNOWN status card (portal has no check results yet)

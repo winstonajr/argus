@@ -167,18 +167,43 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Strings(groups)
 
+	sort.SliceStable(systems, func(i, j int) bool {
+		ni := strings.ToLower(systems[i].Name)
+		nj := strings.ToLower(systems[j].Name)
+		if ni != nj {
+			return ni < nj
+		}
+		return systems[i].ID < systems[j].ID
+	})
+
+	statsHTML, err := s.renderStatsHTML()
+	if err != nil {
+		log.Printf("[ERROR] render index stats: %v", err)
+	}
+
+	var cardsBuf bytes.Buffer
+	for _, sys := range systems {
+		vm := toCardViewModel(sys)
+		vm.JustChanged = false
+		if err := s.cardTmpl.Execute(&cardsBuf, vm); err != nil {
+			log.Printf("[ERROR] render index card %s: %v", sys.ID, err)
+		}
+	}
+
 	data := struct {
 		Title      string
 		IconsSVG   template.HTML
 		HideSearch bool
-		Systems    []monitor.SystemSnapshot
 		Groups     []string
+		StatsHTML  template.HTML
+		CardsHTML  template.HTML
 	}{
 		Title:      "Painel de Operações",
 		IconsSVG:   s.iconsSVG,
 		HideSearch: false,
-		Systems:    systems,
 		Groups:     groups,
+		StatsHTML:  template.HTML(statsHTML),       //nolint:gosec
+		CardsHTML:  template.HTML(cardsBuf.String()), //nolint:gosec
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

@@ -319,16 +319,14 @@ button, input {
   gap: var(--sp-3);
   overflow: hidden;
   cursor: pointer;
-  transition: transform var(--dur-fast) var(--ease-out),
-              box-shadow 300ms ease,
+  transition: box-shadow 200ms ease,
               border-color 300ms ease,
               background 300ms ease;
   text-decoration: none;
 }
 
 .card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
 }
 
 .card:focus-visible {
@@ -442,6 +440,7 @@ button, input {
 
 .status-beacon--unknown {
   background-color: var(--status-unknown);
+  animation: pulse-live 2s infinite ease-in-out;
 }
 
 .card__banner-text {
@@ -642,19 +641,6 @@ button, input {
   color: var(--text-muted);
 }
 
-.card__diagnosis-slot--skeleton {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-}
-
-.card__diagnosis-slot--skeleton .skeleton-shimmer-bar {
-  width: 55%;
-  height: 10px;
-  background: var(--border);
-  border-radius: var(--radius-sm);
-  display: block;
-}
-
 /* Backward compatibility alias if needed */
 .card__alert {
   display: flex;
@@ -681,15 +667,6 @@ button, input {
 .card__footer-action {
   font-weight: 600;
   color: var(--accent);
-}
-
-/* Card Skeleton */
-.card--skeleton {
-  min-height: 180px;
-  background: linear-gradient(90deg, var(--surface) 25%, var(--surface-2) 50%, var(--surface) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.5s infinite;
-  border-color: var(--border);
 }
 
 /* Card Stale / Error state */
@@ -735,12 +712,12 @@ button, input {
   border-radius: 2px;
   background: var(--border);
   opacity: 0.45;
-  transition: transform var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
+  transition: opacity var(--dur-fast) var(--ease-out), filter var(--dur-fast) var(--ease-out);
 }
 
 .heartbeat-tick:hover {
-  transform: scaleY(1.25);
   opacity: 1;
+  filter: brightness(1.2);
 }
 
 .heartbeat-tick--up {
@@ -1056,84 +1033,62 @@ button, input {
   100% { filter: brightness(1); }
 }
 
-@keyframes skeleton-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
-/* Staggered entry animation ONLY on initial skeleton load */
-.card--skeleton {
-  animation: card-enter var(--dur-slow) var(--ease-out) backwards;
-  animation-delay: calc(var(--i, 0) * 30ms);
-}
-
-@keyframes card-enter {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 /* ==========================================================================
    TV Mode
    ========================================================================== */
-body.tv-mode {
+.tv-mode {
   --scale: 1.25;
 }
 
-body.tv-mode .header__center {
+.tv-mode .header__center {
   display: none;
 }
 
-body.tv-mode .cards-grid {
+.tv-mode .cards-grid {
   grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
   gap: var(--sp-6);
 }
 
-body.tv-mode .card {
+.tv-mode .card {
   padding: var(--sp-6);
   border-width: 3px;
 }
 
-body.tv-mode .card__title {
+.tv-mode .card__title {
   font-size: 30px;
 }
 
-body.tv-mode .card__subtitle {
+.tv-mode .card__subtitle {
   font-size: 15px;
 }
 
-body.tv-mode .card__banner-text {
+.tv-mode .card__banner-text {
   font-size: 16px;
 }
 
-body.tv-mode .status-beacon {
+.tv-mode .status-beacon {
   width: 14px;
   height: 14px;
 }
 
-body.tv-mode .target-card {
+.tv-mode .target-card {
   padding: 12px 16px;
 }
 
-body.tv-mode .target-card__val {
+.tv-mode .target-card__val {
   font-size: 22px;
 }
 
-body.tv-mode .target-card__label {
+.tv-mode .target-card__label {
   font-size: 13px;
 }
 
-body.tv-mode .target-card__dot {
+.tv-mode .target-card__dot {
   width: 11px;
   height: 11px;
 }
 
-body.tv-mode .card__diagnosis-slot {
+.tv-mode .card__diagnosis-slot {
   height: 58px;
   min-height: 58px;
   max-height: 58px;
@@ -1143,12 +1098,12 @@ body.tv-mode .card__diagnosis-slot {
   gap: 10px;
 }
 
-body.tv-mode .card__alert {
+.tv-mode .card__alert {
   font-size: 16px;
   padding: 12px 16px;
 }
 
-body.tv-mode .card__footer {
+.tv-mode .card__footer {
   font-size: 14px;
 }
 
@@ -1208,13 +1163,13 @@ body.tv-mode .card__footer {
 }
 
 /* Compact / Table View Mode */
-.cards-grid--compact {
+html.view-compact .cards-grid {
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
 }
 
-.cards-grid--compact .card {
+html.view-compact .cards-grid .card {
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
@@ -1224,51 +1179,51 @@ body.tv-mode .card__footer {
   border-radius: var(--radius);
 }
 
-.cards-grid--compact .card__progress,
-.cards-grid--compact .card__footer {
+html.view-compact .cards-grid .card__progress,
+html.view-compact .cards-grid .card__footer {
   display: none;
 }
 
-.cards-grid--compact .card__banner {
+html.view-compact .cards-grid .card__banner {
   min-width: 155px;
   padding: 4px 10px;
 }
 
-.cards-grid--compact .card__headline {
+html.view-compact .cards-grid .card__headline {
   min-width: 200px;
   flex: 1;
 }
 
-.cards-grid--compact .card__title {
+html.view-compact .cards-grid .card__title {
   font-size: var(--fs-md);
 }
 
-.cards-grid--compact .card__targets-grid {
+html.view-compact .cards-grid .card__targets-grid {
   display: flex;
   gap: var(--sp-2);
   min-width: 240px;
 }
 
-.cards-grid--compact .target-card {
+html.view-compact .cards-grid .target-card {
   padding: 4px 10px;
   flex: 1;
 }
 
-.cards-grid--compact .card__diagnosis-slot {
+html.view-compact .cards-grid .card__diagnosis-slot {
   min-height: 0;
   padding: 4px 10px;
   flex: 1;
   max-width: 280px;
 }
 
-.cards-grid--compact .card__telemetry {
+html.view-compact .cards-grid .card__telemetry {
   min-width: 160px;
   max-width: 200px;
 }
 
 @media (max-width: 960px) {
-  .cards-grid--compact .card__telemetry,
-  .cards-grid--compact .card__diagnosis-slot {
+  html.view-compact .cards-grid .card__telemetry,
+  html.view-compact .cards-grid .card__diagnosis-slot {
     display: none;
   }
 }
