@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -19,6 +20,7 @@ import (
 	"argus/internal/checker"
 	"argus/internal/config"
 	"argus/internal/monitor"
+	"argus/internal/notify"
 	"argus/internal/storage"
 )
 
@@ -50,6 +52,8 @@ type Server struct {
 	sseClients      map[chan sseEvent]struct{}
 	triggerMu       sync.RWMutex
 	checkTrigger    func(string) bool
+	notifierMu      sync.RWMutex
+	notifier        *notify.Notifier
 	manualCheckMu   sync.Mutex
 	lastManualCheck map[string]time.Time
 }
@@ -126,6 +130,16 @@ func (s *Server) routes() {
 		log.Fatalf("failed to create static sub FS: %v", err)
 	}
 	s.mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(subStatic))))
+	s.mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		data, err := staticFS.ReadFile("static/favicon.ico")
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "image/x-icon")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		_, _ = w.Write(data)
+	})
 
 	// Web endpoints
 	s.mux.HandleFunc("GET /{$}", s.handleIndex)
@@ -141,6 +155,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/systems/{id}", s.handleAPISystem)
 	s.mux.HandleFunc("POST /api/systems/{id}/check", s.handleTriggerCheck)
 	s.mux.HandleFunc("POST /api/systems/{id}/maintenance", s.handleToggleMaintenance)
+	s.mux.HandleFunc("POST /api/alerts/test", s.handleTestAlert)
 	s.mux.HandleFunc("GET /api/events", s.handleAPIEvents)
 	s.mux.HandleFunc("GET /metrics", s.handleMetrics)
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
@@ -151,6 +166,13 @@ func (s *Server) SetCheckTrigger(fn func(string) bool) {
 	s.triggerMu.Lock()
 	s.checkTrigger = fn
 	s.triggerMu.Unlock()
+}
+
+// SetNotifier registers the notifier instance used for alert testing.
+func (s *Server) SetNotifier(n *notify.Notifier) {
+	s.notifierMu.Lock()
+	s.notifier = n
+	s.notifierMu.Unlock()
 }
 
 // UpdateConfig updates the server's configuration reference safely at runtime.
@@ -588,12 +610,51 @@ func (s *Server) handleToggleMaintenance(w http.ResponseWriter, r *http.Request)
 		next = q == "true" || q == "1"
 	}
 	s.store.SetMaintenance(id, next)
+	if s.storage != nil {
+		if err := s.storage.SetMaintenanceOverride(r.Context(), id, next); err != nil {
+			log.Printf("[WARN] persist maintenance override for %s: %v", id, err)
+		}
+	}
 	s.broadcastSystemUpdate(id)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"system_id":      id,
 		"in_maintenance": next,
+	})
+}
+
+// Handler: POST /api/alerts/test
+func (s *Server) handleTestAlert(w http.ResponseWriter, r *http.Request) {
+	s.notifierMu.RLock()
+	n := s.notifier
+	s.notifierMu.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	if n == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "serviço de notificações indisponível"})
+		return
+	}
+
+	sent, err := n.SendTest(r.Context())
+	if err != nil {
+		status := http.StatusBadGateway
+		if errors.Is(err, notify.ErrNoChannelsConfigured) {
+			status = http.StatusBadRequest
+		}
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":       false,
+			"channels": sent,
+			"error":    err.Error(),
+		})
+		return
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":       true,
+		"channels": sent,
 	})
 }
 

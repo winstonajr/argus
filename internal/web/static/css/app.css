@@ -82,6 +82,14 @@ button, input {
   color: var(--accent);
 }
 
+.header__logo-img {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
 .header__center {
   display: flex;
   align-items: center;

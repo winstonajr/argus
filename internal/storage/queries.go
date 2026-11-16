@@ -415,6 +415,45 @@ LIMIT 1
 	return t.Local(), nil
 }
 
+// SetMaintenanceOverride persists a manual maintenance state override for a system.
+func (d *DB) SetMaintenanceOverride(ctx context.Context, sysID string, enabled bool) error {
+	val := 0
+	if enabled {
+		val = 1
+	}
+	_, err := d.db.ExecContext(ctx, `
+INSERT INTO maintenance_overrides (system_id, enabled, updated_at)
+VALUES (?, ?, ?)
+ON CONFLICT(system_id) DO UPDATE SET
+  enabled = excluded.enabled,
+  updated_at = excluded.updated_at
+`, sysID, val, time.Now().UTC())
+	if err != nil {
+		return fmt.Errorf("upsert maintenance override: %w", err)
+	}
+	return nil
+}
+
+// GetMaintenanceOverrides loads all persisted maintenance overrides keyed by system ID.
+func (d *DB) GetMaintenanceOverrides(ctx context.Context) (map[string]bool, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT system_id, enabled FROM maintenance_overrides`)
+	if err != nil {
+		return nil, fmt.Errorf("query maintenance overrides: %w", err)
+	}
+	defer rows.Close()
+
+	overrides := make(map[string]bool)
+	for rows.Next() {
+		var sysID string
+		var enabledInt int
+		if err := rows.Scan(&sysID, &enabledInt); err != nil {
+			return nil, fmt.Errorf("scan maintenance override: %w", err)
+		}
+		overrides[sysID] = enabledInt == 1
+	}
+	return overrides, rows.Err()
+}
+
 func parseTime(s string) (time.Time, error) {
 	layouts := []string{
 		time.RFC3339Nano,
