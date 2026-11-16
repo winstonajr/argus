@@ -322,6 +322,107 @@
     });
   }
 
+  // 7. Client-side Card Drag & Drop Reordering
+  const CARD_ORDER_KEY = 'argus-card-order';
+
+  function restoreCardOrder() {
+    const grid = document.getElementById('cards-grid');
+    if (!grid) return;
+
+    let savedOrder;
+    try {
+      savedOrder = JSON.parse(localStorage.getItem(CARD_ORDER_KEY) || '[]');
+    } catch (_) {
+      return;
+    }
+    if (!Array.isArray(savedOrder) || savedOrder.length === 0) return;
+
+    const byId = new Map();
+    grid.querySelectorAll('.card[data-system-id]').forEach(card => {
+      byId.set(card.getAttribute('data-system-id'), card);
+    });
+
+    const frag = document.createDocumentFragment();
+    savedOrder.forEach(id => {
+      const card = byId.get(id);
+      if (card) {
+        frag.appendChild(card);
+        byId.delete(id);
+      }
+    });
+    byId.forEach(card => frag.appendChild(card));
+    grid.appendChild(frag);
+  }
+
+  function saveCardOrder() {
+    const grid = document.getElementById('cards-grid');
+    if (!grid) return;
+    const order = Array.from(grid.querySelectorAll('.card[data-system-id]'))
+      .map(card => card.getAttribute('data-system-id'))
+      .filter(Boolean);
+    try {
+      localStorage.setItem(CARD_ORDER_KEY, JSON.stringify(order));
+    } catch (_) {}
+  }
+
+  function initCardDragAndDrop() {
+    const grid = document.getElementById('cards-grid');
+    if (!grid) return;
+
+    restoreCardOrder();
+
+    let draggedCard = null;
+    let suppressClickUntil = 0;
+
+    grid.addEventListener('dragstart', function(e) {
+      const card = e.target.closest('.card[data-system-id]');
+      if (!card) return;
+      draggedCard = card;
+      card.classList.add('dragging');
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', card.getAttribute('data-system-id') || '');
+      }
+    });
+
+    grid.addEventListener('dragover', function(e) {
+      if (!draggedCard) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+
+      const targetCard = e.target.closest('.card[data-system-id]');
+      if (!targetCard || targetCard === draggedCard || targetCard.parentNode !== grid) return;
+
+      const isFollowing = draggedCard.compareDocumentPosition(targetCard) & Node.DOCUMENT_POSITION_FOLLOWING;
+      if (isFollowing) {
+        targetCard.after(draggedCard);
+      } else {
+        targetCard.before(draggedCard);
+      }
+    });
+
+    grid.addEventListener('drop', function(e) {
+      if (!draggedCard) return;
+      e.preventDefault();
+      saveCardOrder();
+    });
+
+    grid.addEventListener('dragend', function() {
+      if (draggedCard) {
+        draggedCard.classList.remove('dragging');
+        draggedCard = null;
+        suppressClickUntil = Date.now() + 80;
+        saveCardOrder();
+      }
+    });
+
+    grid.addEventListener('click', function(e) {
+      if (Date.now() < suppressClickUntil) {
+        e.preventDefault();
+      }
+    });
+  }
+
   // Initialize
   window.addEventListener('DOMContentLoaded', function() {
     initTheme();
@@ -329,6 +430,7 @@
     initViewMode();
     initSound();
     seedInitialStatuses();
+    initCardDragAndDrop();
     updateTabTitleFromStats();
     initSSE();
 

@@ -1,5 +1,6 @@
 <a id="card-{{.ID}}"
    class="card card--{{.WorstStatusLower}} {{if .JustChanged}}just-changed{{end}}"
+   draggable="true"
    data-system-id="{{.ID}}"
    data-name="{{.Name}}"
    data-group="{{.Group}}"
@@ -96,7 +97,7 @@
   <div class="card__telemetry">
     <div class="heartbeat-bar" aria-label="Histórico recente">
       {{range .Heartbeat}}
-        <span class="heartbeat-tick heartbeat-tick--{{.StatusLower}}" title="{{.Tooltip}}"></span>
+        <span class="heartbeat-tick heartbeat-tick--{{.StatusLower}}"></span>
       {{end}}
     </div>
     {{if .HasSparkline}}

@@ -196,6 +196,33 @@ func TestConfig_HTTPHost(t *testing.T) {
 	}
 }
 
+func TestConfig_TCPPortDefault(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Systems = []SystemConfig{
+		{ID: "ip-default", IP: "10.0.0.10"},
+		{ID: "ip-custom", IP: "10.0.0.11", TCPPort: 443},
+		{ID: "url-only", URL: "https://example.com"},
+		{ID: "http-host", IP: "http://10.0.0.12:8080"},
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected config to be valid, got: %v", err)
+	}
+
+	if cfg.Systems[0].TCPPort != 22 {
+		t.Errorf("expected default tcp_port 22, got %d", cfg.Systems[0].TCPPort)
+	}
+	if cfg.Systems[1].TCPPort != 443 {
+		t.Errorf("expected custom tcp_port 443, got %d", cfg.Systems[1].TCPPort)
+	}
+	if cfg.Systems[2].TCPPort != 0 {
+		t.Errorf("expected tcp_port 0 for url-only system, got %d", cfg.Systems[2].TCPPort)
+	}
+	if cfg.Systems[3].TCPPort != 0 {
+		t.Errorf("expected tcp_port 0 for http-host system, got %d", cfg.Systems[3].TCPPort)
+	}
+}
+
 func contains(str, substr string) bool {
 	return len(str) >= len(substr) && (str == substr || len(substr) == 0 || (len(str) > 0 && len(substr) > 0 && stringContains(str, substr)))
 }

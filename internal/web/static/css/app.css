@@ -319,10 +319,19 @@ button, input {
   gap: var(--sp-3);
   overflow: hidden;
   cursor: pointer;
+  user-select: none;
   transition: box-shadow 200ms ease,
               border-color 300ms ease,
-              background 300ms ease;
+              background 300ms ease,
+              opacity 150ms ease,
+              transform 150ms ease;
   text-decoration: none;
+}
+
+.card.dragging {
+  opacity: 0.45;
+  transform: scale(0.98);
+  cursor: grabbing;
 }
 
 .card:hover {
@@ -691,24 +700,22 @@ button, input {
 
 .heartbeat-bar {
   display: flex;
-  align-items: center;
-  gap: 2px;
+  align-items: stretch;
+  gap: 1px;
   flex: 1;
-  height: 14px;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface-2);
+  pointer-events: none;
+  user-select: none;
 }
 
 .heartbeat-tick {
   flex: 1;
   height: 100%;
-  border-radius: 2px;
   background: var(--border);
   opacity: 0.45;
-  transition: opacity var(--dur-fast) var(--ease-out), filter var(--dur-fast) var(--ease-out);
-}
-
-.heartbeat-tick:hover {
-  opacity: 1;
-  filter: brightness(1.2);
 }
 
 .heartbeat-tick--up {

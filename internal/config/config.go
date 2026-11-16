@@ -321,6 +321,9 @@ func (c *Config) Validate() error {
 				if parsedIP := net.ParseIP(sys.IP); parsedIP == nil {
 					return fmt.Errorf("system %q has invalid ip %q", sys.ID, sys.IP)
 				}
+				if sys.TCPPort == 0 {
+					sys.TCPPort = 22
+				}
 			}
 		}
 
