@@ -216,3 +216,28 @@ func TestNotifier_SendEmailRespectsContextTimeout(t *testing.T) {
 		t.Errorf("sendEmail took too long (%v), did not respect context timeout", time.Since(start))
 	}
 }
+
+func TestNotifier_SendTest(t *testing.T) {
+	emptyNotifier := New(config.AlertsConfig{})
+	if _, err := emptyNotifier.SendTest(context.Background()); err != ErrNoChannelsConfigured {
+		t.Fatalf("expected ErrNoChannelsConfigured, got %v", err)
+	}
+
+	var called int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	n := New(config.AlertsConfig{
+		Webhook: config.WebhookAlertConfig{URL: srv.URL},
+	})
+	sent, err := n.SendTest(context.Background())
+	if err != nil {
+		t.Fatalf("SendTest failed: %v", err)
+	}
+	if sent != 1 || called != 1 {
+		t.Errorf("expected sent=1 and called=1, got sent=%d called=%d", sent, called)
+	}
+}

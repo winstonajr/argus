@@ -72,6 +72,11 @@ func main() {
 			}
 		}
 	}
+	if overrides, err := db.GetMaintenanceOverrides(hydrateCtx); err == nil {
+		for sysID, enabled := range overrides {
+			store.SetMaintenance(sysID, enabled)
+		}
+	}
 	hydrateCancel()
 
 	// Pipe check results and state transitions into SQLite
@@ -107,6 +112,7 @@ func main() {
 		log.Fatalf("[FATAL] Erro ao inicializar servidor web: %v", err)
 	}
 	webServer.SetCheckTrigger(scheduler.CheckNow)
+	webServer.SetNotifier(notifier)
 
 	httpSrv := &http.Server{
 		Addr:              cfg.Server.Addr,
@@ -131,6 +137,42 @@ func main() {
 	reloadCh := make(chan os.Signal, 1)
 	signal.Notify(reloadCh, syscall.SIGHUP)
 
+	var lastCfgMod time.Time
+	var lastCfgSize int64
+	if info, err := os.Stat(configPath); err == nil {
+		lastCfgMod = info.ModTime()
+		lastCfgSize = info.Size()
+	}
+
+	configWatchTicker := time.NewTicker(5 * time.Second)
+	defer configWatchTicker.Stop()
+
+	reloadConfig := func(reason string) {
+		log.Printf("[INFO] %s; recarregando configuração de %s...", reason, configPath)
+		newCfg, reloadErr := config.Load(configPath)
+		if reloadErr != nil {
+			log.Printf("[WARN] Falha ao recarregar configuração (mantendo atual): %v", reloadErr)
+			return
+		}
+		rootCancel()
+		scheduler.Stop()
+		store.ReloadConfig(newCfg)
+		ovCtx, ovCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		if overrides, err := db.GetMaintenanceOverrides(ovCtx); err == nil {
+			for sysID, enabled := range overrides {
+				store.SetMaintenance(sysID, enabled)
+			}
+		}
+		ovCancel()
+		notifier.UpdateConfig(newCfg.Alerts)
+		webServer.UpdateConfig(newCfg)
+		rootCtx, rootCancel = context.WithCancel(context.Background())
+		scheduler = monitor.NewScheduler(newCfg, store, httpChecker, pingChecker)
+		scheduler.Start(rootCtx)
+		webServer.SetCheckTrigger(scheduler.CheckNow)
+		log.Printf("[INFO] Configuração recarregada (%d sistemas)", len(newCfg.Systems))
+	}
+
 loop:
 	for {
 		select {
@@ -138,22 +180,20 @@ loop:
 			log.Printf("[INFO] Sinal recebido (%v); encerrando Argus com segurança...", sig)
 			break loop
 		case <-reloadCh:
-			log.Printf("[INFO] SIGHUP recebido; recarregando configuração de %s...", configPath)
-			newCfg, reloadErr := config.Load(configPath)
-			if reloadErr != nil {
-				log.Printf("[WARN] Falha ao recarregar configuração (mantendo atual): %v", reloadErr)
+			reloadConfig("SIGHUP recebido")
+		case <-configWatchTicker.C:
+			info, err := os.Stat(configPath)
+			if err != nil {
 				continue
 			}
-			rootCancel()
-			scheduler.Stop()
-			store.ReloadConfig(newCfg)
-			notifier.UpdateConfig(newCfg.Alerts)
-			webServer.UpdateConfig(newCfg)
-			rootCtx, rootCancel = context.WithCancel(context.Background())
-			scheduler = monitor.NewScheduler(newCfg, store, httpChecker, pingChecker)
-			scheduler.Start(rootCtx)
-			webServer.SetCheckTrigger(scheduler.CheckNow)
-			log.Printf("[INFO] Configuração recarregada (%d sistemas)", len(newCfg.Systems))
+			if !info.ModTime().Equal(lastCfgMod) || info.Size() != lastCfgSize {
+				time.Sleep(150 * time.Millisecond)
+				if latest, statErr := os.Stat(configPath); statErr == nil {
+					lastCfgMod = latest.ModTime()
+					lastCfgSize = latest.Size()
+				}
+				reloadConfig("Alteração detectada no arquivo de configuração")
+			}
 		case err := <-serverErrCh:
 			log.Fatalf("[FATAL] Erro no servidor HTTP: %v", err)
 		}

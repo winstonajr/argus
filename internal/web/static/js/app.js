@@ -726,6 +726,61 @@
     }
   }
 
+  function initPublicStatusAutoRefresh() {
+    const statusPage = document.getElementById('status-page');
+    if (!statusPage) return;
+
+    setInterval(async function() {
+      try {
+        const resp = await fetch('/status', { cache: 'no-store' });
+        if (!resp.ok) return;
+        const html = await resp.text();
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const next = doc.getElementById('status-page');
+        const cur = document.getElementById('status-page');
+        if (next && cur) {
+          cur.innerHTML = next.innerHTML;
+        }
+        const liveDot = document.getElementById('live-dot');
+        if (liveDot) liveDot.classList.remove('disconnected');
+      } catch (_) {
+        const liveDot = document.getElementById('live-dot');
+        if (liveDot) liveDot.classList.add('disconnected');
+      }
+    }, 15000);
+  }
+
+  function initTestAlertButton() {
+    const btn = document.getElementById('test-alert-btn');
+    if (!btn) return;
+
+    btn.addEventListener('click', async function() {
+      if (btn.disabled) return;
+      btn.disabled = true;
+      const prevTitle = btn.getAttribute('title') || 'Testar envio de alertas';
+      btn.setAttribute('title', 'Enviando teste...');
+
+      try {
+        const resp = await fetch('/api/alerts/test', { method: 'POST' });
+        const data = await resp.json().catch(() => ({}));
+        if (resp.ok && data.ok) {
+          btn.classList.add('active');
+          btn.setAttribute('title', `Teste enviado (${data.channels || 1} canal(is))`);
+        } else {
+          btn.setAttribute('title', data.error || 'Falha ao enviar teste');
+        }
+      } catch (_) {
+        btn.setAttribute('title', 'Erro de rede ao testar alertas');
+      }
+
+      setTimeout(() => {
+        btn.classList.remove('active');
+        btn.setAttribute('title', prevTitle);
+        btn.disabled = false;
+      }, 2500);
+    });
+  }
+
   // Initialize
   window.addEventListener('DOMContentLoaded', function() {
     initTheme();
@@ -737,6 +792,8 @@
     initCardDragAndDrop();
     initFiltersFromURL();
     initHistoryActions();
+    initPublicStatusAutoRefresh();
+    initTestAlertButton();
     updateTabTitleFromStats();
     initSSE();
 

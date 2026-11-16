@@ -13,6 +13,7 @@ import (
 	"argus/internal/checker"
 	"argus/internal/config"
 	"argus/internal/monitor"
+	"argus/internal/notify"
 	"argus/internal/storage"
 )
 
@@ -500,5 +501,25 @@ func TestServer_TriggerCheckAndUIControls(t *testing.T) {
 	}
 	if !strings.Contains(histBody, `id="check-now-btn"`) {
 		t.Errorf("expected history page to include check-now-btn")
+	}
+
+	// 4. Test Alert endpoint & manifest/favicon links
+	server.SetNotifier(notify.New(config.AlertsConfig{}))
+	reqAlert := httptest.NewRequest(http.MethodPost, "/api/alerts/test", nil)
+	rrAlert := httptest.NewRecorder()
+	server.ServeHTTP(rrAlert, reqAlert)
+	if rrAlert.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 when no alert channels configured, got %d", rrAlert.Code)
+	}
+
+	reqFav := httptest.NewRequest(http.MethodGet, "/favicon.ico", nil)
+	rrFav := httptest.NewRecorder()
+	server.ServeHTTP(rrFav, reqFav)
+	if rrFav.Code != http.StatusOK {
+		t.Errorf("expected 200 for /favicon.ico, got %d", rrFav.Code)
+	}
+
+	if !strings.Contains(rrIndex.Body.String(), `rel="manifest"`) {
+		t.Errorf("expected index page to include PWA manifest link")
 	}
 }
