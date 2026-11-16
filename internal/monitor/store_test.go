@@ -319,3 +319,39 @@ func TestStore_MaintenanceAndReloadConfig(t *testing.T) {
 		t.Errorf("expected ReloadConfig to preserve in-memory history for retained system")
 	}
 }
+
+func TestStore_GetSummaryCounts(t *testing.T) {
+	cfg := &config.Config{
+		Defaults: config.DefaultsConfig{
+			Interval:        10 * time.Second,
+			FailThreshold:   2,
+			DegradedLatency: 500 * time.Millisecond,
+		},
+		Systems: []config.SystemConfig{
+			{ID: "up-sys", Name: "Up", URL: "https://up.local"},
+			{ID: "deg-sys", Name: "Deg", URL: "https://deg.local"},
+			{ID: "down-sys", Name: "Down", IP: "10.0.0.2"},
+			{ID: "unk-sys", Name: "Unk", URL: "https://unk.local"},
+		},
+	}
+
+	store := NewStore(cfg)
+	now := time.Now()
+	store.RecordDNSResult("up-sys", checker.Result{OK: true, Latency: 20 * time.Millisecond, CheckedAt: now})
+	store.RecordDNSResult("deg-sys", checker.Result{OK: true, Latency: 800 * time.Millisecond, CheckedAt: now})
+	store.RecordIPResult("down-sys", checker.Result{OK: false, Error: "timeout", CheckedAt: now})
+	store.RecordIPResult("down-sys", checker.Result{OK: false, Error: "timeout", CheckedAt: now})
+
+	summary := store.GetSummaryCounts()
+	stats := store.GetStats()
+
+	if summary != stats {
+		t.Fatalf("GetSummaryCounts() = %+v, want %+v", summary, stats)
+	}
+	if summary.Total != 4 || summary.UpCount != 1 || summary.DegradedCount != 1 || summary.DownCount != 1 || summary.UnknownCount != 1 {
+		t.Fatalf("unexpected counts: %+v", summary)
+	}
+	if summary.WorstStatus != StatusDown {
+		t.Fatalf("expected WorstStatus DOWN, got %s", summary.WorstStatus)
+	}
+}

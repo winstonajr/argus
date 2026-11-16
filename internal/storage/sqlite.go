@@ -113,6 +113,12 @@ CREATE TABLE IF NOT EXISTS events (
   occurred_at DATETIME NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_events_sys_time ON events(system_id, occurred_at);
+
+CREATE TABLE IF NOT EXISTS maintenance_overrides (
+  system_id  TEXT PRIMARY KEY,
+  enabled    INTEGER NOT NULL,
+  updated_at DATETIME NOT NULL
+);
 `
 	_, err := db.Exec(schema)
 	return err

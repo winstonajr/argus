@@ -1,56 +1,11 @@
 {{define "content"}}
-<div id="stats-container" hx-get="/stats" hx-trigger="load" hx-swap="innerHTML">
-  <!-- Stats bar loads here independently -->
-  <div class="stats-bar" style="opacity: 0.5;">
-    <div class="stats-grid">
-      <span class="mono">Carregando métricas do Argus...</span>
-    </div>
-  </div>
+<div id="stats-container">
+  {{.StatsHTML}}
 </div>
 
 <main class="main-container">
   <div class="cards-grid" id="cards-grid">
-    {{range $idx, $sys := .Systems}}
-    <a id="card-{{$sys.ID}}"
-       class="card card--skeleton"
-       data-system-id="{{$sys.ID}}"
-       data-name="{{$sys.Name}}"
-       data-group="{{$sys.Group}}"
-       data-status="unknown"
-       style="--i: {{$idx}}"
-       href="/systems/{{$sys.ID}}/history"
-       hx-get="/cards/{{$sys.ID}}"
-       hx-trigger="load"
-       hx-swap="outerHTML settle:200ms">
-      <div class="card__banner card__banner--unknown">
-        <div class="card__banner-status">
-          <span class="status-beacon status-beacon--unknown"></span>
-          <span class="card__banner-text">CARREGANDO...</span>
-        </div>
-      </div>
-      <div class="card__headline">
-        <h2 class="card__title">{{$sys.Name}}</h2>
-        <span class="card__subtitle mono">{{if $sys.URL}}{{$sys.URL}}{{else}}{{$sys.IP}}{{end}}</span>
-      </div>
-      <div class="card__targets-grid">
-        <div class="target-card">
-          <div class="target-card__top"><span class="target-card__label">DNS</span></div>
-          <div class="target-card__val mono">—</div>
-        </div>
-        <div class="target-card">
-          <div class="target-card__top"><span class="target-card__label">IP</span></div>
-          <div class="target-card__val mono">—</div>
-        </div>
-      </div>
-      <div class="card__diagnosis-slot card__diagnosis-slot--skeleton">
-        <span class="skeleton-shimmer-bar"></span>
-      </div>
-      <div class="card__footer">
-        <span class="mono">Carregando telemetria...</span>
-        <span class="card__footer-action">Histórico →</span>
-      </div>
-    </a>
-    {{end}}
+    {{.CardsHTML}}
   </div>
 </main>
 {{end}}

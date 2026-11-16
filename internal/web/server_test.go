@@ -13,6 +13,7 @@ import (
 	"argus/internal/checker"
 	"argus/internal/config"
 	"argus/internal/monitor"
+	"argus/internal/notify"
 	"argus/internal/storage"
 )
 
@@ -71,8 +72,8 @@ func TestServer_Endpoints(t *testing.T) {
 	if !strings.Contains(body, "ERP Corporativo") {
 		t.Errorf("expected body to contain 'ERP Corporativo'")
 	}
-	if !strings.Contains(body, "hx-get=\"/cards/erp\"") {
-		t.Errorf("expected body to contain HTMX card trigger")
+	if !strings.Contains(body, "id=\"card-erp\"") {
+		t.Errorf("expected body to contain rendered card 'card-erp'")
 	}
 
 	// 2. GET /cards/erp (partial HTMX card)
@@ -153,28 +154,35 @@ func TestServer_Endpoints(t *testing.T) {
 	}
 }
 
-func TestServer_CardDiagnosisSlot(t *testing.T) {
+func TestServer_HistoryStatusBannerAndCardWithoutDiagnosisSlot(t *testing.T) {
 	server, store, db := setupTestServer(t)
 	defer db.Close()
 
-	// 1. Index page includes skeleton diagnosis slot
+	// 1. Index page and card do not render diagnosis slot
 	reqIndex := httptest.NewRequest(http.MethodGet, "/", nil)
 	rrIndex := httptest.NewRecorder()
 	server.ServeHTTP(rrIndex, reqIndex)
-	if !strings.Contains(rrIndex.Body.String(), "card__diagnosis-slot--skeleton") {
-		t.Errorf("expected index to include skeleton diagnosis slot")
+	if strings.Contains(rrIndex.Body.String(), "card__diagnosis-slot") {
+		t.Errorf("expected index card not to include diagnosis slot")
 	}
 
-	// 2. UNKNOWN status card (portal has no check results yet)
-	reqUnknown := httptest.NewRequest(http.MethodGet, "/cards/portal", nil)
+	// 2. UNKNOWN status on history page (portal has no check results yet)
+	reqCardUnknown := httptest.NewRequest(http.MethodGet, "/cards/portal", nil)
+	rrCardUnknown := httptest.NewRecorder()
+	server.ServeHTTP(rrCardUnknown, reqCardUnknown)
+	if strings.Contains(rrCardUnknown.Body.String(), "card__diagnosis-slot") {
+		t.Errorf("expected portal card not to include diagnosis slot")
+	}
+
+	reqUnknown := httptest.NewRequest(http.MethodGet, "/systems/portal/history", nil)
 	rrUnknown := httptest.NewRecorder()
 	server.ServeHTTP(rrUnknown, reqUnknown)
 	unknownBody := rrUnknown.Body.String()
-	if !strings.Contains(unknownBody, "card__diagnosis-slot--unknown") {
-		t.Errorf("expected portal card to have unknown diagnosis slot, got: %s", unknownBody)
+	if !strings.Contains(unknownBody, "history-status-banner--unknown") {
+		t.Errorf("expected portal history to have unknown status banner, got: %s", unknownBody)
 	}
 
-	// 3. UP status card
+	// 3. UP status on history page
 	store.RecordDNSResult("erp", checker.Result{
 		OK:         true,
 		StatusCode: 200,
@@ -186,18 +194,18 @@ func TestServer_CardDiagnosisSlot(t *testing.T) {
 		Latency:   10 * time.Millisecond,
 		CheckedAt: time.Now(),
 	})
-	reqUP := httptest.NewRequest(http.MethodGet, "/cards/erp", nil)
+	reqUP := httptest.NewRequest(http.MethodGet, "/systems/erp/history", nil)
 	rrUP := httptest.NewRecorder()
 	server.ServeHTTP(rrUP, reqUP)
 	upBody := rrUP.Body.String()
-	if !strings.Contains(upBody, "card__diagnosis-slot--up") {
-		t.Errorf("expected erp card to have up diagnosis slot, got: %s", upBody)
+	if !strings.Contains(upBody, "history-status-banner--up") {
+		t.Errorf("expected erp history to have up status banner, got: %s", upBody)
 	}
 	if !strings.Contains(upBody, "Todos os alvos operacionais") {
-		t.Errorf("expected erp card to contain 'Todos os alvos operacionais', got: %s", upBody)
+		t.Errorf("expected erp history to contain 'Todos os alvos operacionais', got: %s", upBody)
 	}
 
-	// 4. DOWN status card with diagnosis
+	// 4. DOWN status with diagnosis on history page
 	store.RecordDNSResult("erp", checker.Result{
 		OK:         false,
 		StatusCode: 502,
@@ -212,18 +220,18 @@ func TestServer_CardDiagnosisSlot(t *testing.T) {
 		ErrorCat:   checker.CatProxy,
 		CheckedAt:  time.Now(),
 	})
-	reqDown := httptest.NewRequest(http.MethodGet, "/cards/erp", nil)
+	reqDown := httptest.NewRequest(http.MethodGet, "/systems/erp/history", nil)
 	rrDown := httptest.NewRecorder()
 	server.ServeHTTP(rrDown, reqDown)
 	downBody := rrDown.Body.String()
-	if !strings.Contains(downBody, "card__diagnosis-slot--down") {
-		t.Errorf("expected erp card to have down diagnosis slot, got: %s", downBody)
+	if !strings.Contains(downBody, "history-status-banner--down") {
+		t.Errorf("expected erp history to have down status banner, got: %s", downBody)
 	}
-	if !strings.Contains(downBody, "502") {
-		t.Errorf("expected diagnosis to mention 502, got: %s", downBody)
+	if !strings.Contains(downBody, "Aplicação fora (borda Cloudflare)") {
+		t.Errorf("expected erp history diagnosis to mention 'Aplicação fora (borda Cloudflare)', got: %s", downBody)
 	}
 
-	// 5. DEGRADED status card
+	// 5. DEGRADED status on history page
 	// Recover to UP first
 	store.RecordDNSResult("erp", checker.Result{
 		OK:         true,
@@ -245,12 +253,12 @@ func TestServer_CardDiagnosisSlot(t *testing.T) {
 		ErrorCat:   checker.CatHTTP5xx,
 		CheckedAt:  time.Now(),
 	})
-	reqDegraded := httptest.NewRequest(http.MethodGet, "/cards/erp", nil)
+	reqDegraded := httptest.NewRequest(http.MethodGet, "/systems/erp/history", nil)
 	rrDegraded := httptest.NewRecorder()
 	server.ServeHTTP(rrDegraded, reqDegraded)
 	degradedBody := rrDegraded.Body.String()
-	if !strings.Contains(degradedBody, "card__diagnosis-slot--degraded") {
-		t.Errorf("expected erp card to have degraded diagnosis slot, got: %s", degradedBody)
+	if !strings.Contains(degradedBody, "history-status-banner--degraded") {
+		t.Errorf("expected erp history to have degraded status banner, got: %s", degradedBody)
 	}
 }
 
@@ -418,5 +426,100 @@ func TestServer_MaintenanceAndNilStorage(t *testing.T) {
 		if rr.Code != http.StatusOK {
 			t.Errorf("GET %s with nil storage returned %d, want 200", path, rr.Code)
 		}
+	}
+}
+
+func TestServer_TriggerCheckAndUIControls(t *testing.T) {
+	cfg := &config.Config{
+		Defaults: config.DefaultsConfig{Interval: 10 * time.Second, FailThreshold: 2, DegradedLatency: 2 * time.Second},
+		Systems: []config.SystemConfig{
+			{ID: "erp", Name: "ERP", URL: "https://erp.local"},
+		},
+	}
+	store := monitor.NewStore(cfg)
+	server, err := NewServer(cfg, store, nil)
+	if err != nil {
+		t.Fatalf("NewServer failed: %v", err)
+	}
+
+	// 1. Without trigger configured -> 503
+	reqUnavail := httptest.NewRequest(http.MethodPost, "/api/systems/erp/check", nil)
+	rrUnavail := httptest.NewRecorder()
+	server.ServeHTTP(rrUnavail, reqUnavail)
+	if rrUnavail.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 when trigger unavailable, got %d", rrUnavail.Code)
+	}
+
+	// 2. Configure trigger
+	triggered := 0
+	server.SetCheckTrigger(func(sysID string) bool {
+		if sysID == "erp" {
+			triggered++
+			return true
+		}
+		return false
+	})
+
+	// Unknown system -> 404
+	req404 := httptest.NewRequest(http.MethodPost, "/api/systems/unknown/check", nil)
+	rr404 := httptest.NewRecorder()
+	server.ServeHTTP(rr404, req404)
+	if rr404.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for unknown system, got %d", rr404.Code)
+	}
+
+	// Valid system -> 202 Accepted
+	reqOK := httptest.NewRequest(http.MethodPost, "/api/systems/erp/check", nil)
+	rrOK := httptest.NewRecorder()
+	server.ServeHTTP(rrOK, reqOK)
+	if rrOK.Code != http.StatusAccepted || triggered != 1 {
+		t.Fatalf("expected 202 and triggered=1, got %d (triggered=%d)", rrOK.Code, triggered)
+	}
+
+	// Immediate retry within 3s -> 429 Too Many Requests
+	req429 := httptest.NewRequest(http.MethodPost, "/api/systems/erp/check", nil)
+	rr429 := httptest.NewRecorder()
+	server.ServeHTTP(rr429, req429)
+	if rr429.Code != http.StatusTooManyRequests || triggered != 1 {
+		t.Fatalf("expected 429 rate limit and triggered=1, got %d (triggered=%d)", rr429.Code, triggered)
+	}
+
+	// 3. UI controls presence
+	reqIndex := httptest.NewRequest(http.MethodGet, "/", nil)
+	rrIndex := httptest.NewRecorder()
+	server.ServeHTTP(rrIndex, reqIndex)
+	if !strings.Contains(rrIndex.Body.String(), `id="sort-toggle-btn"`) {
+		t.Errorf("expected index page to include sort-toggle-btn")
+	}
+
+	reqHist := httptest.NewRequest(http.MethodGet, "/systems/erp/history", nil)
+	rrHist := httptest.NewRecorder()
+	server.ServeHTTP(rrHist, reqHist)
+	histBody := rrHist.Body.String()
+	if !strings.Contains(histBody, `id="maintenance-toggle-btn"`) {
+		t.Errorf("expected history page to include maintenance-toggle-btn")
+	}
+	if !strings.Contains(histBody, `id="check-now-btn"`) {
+		t.Errorf("expected history page to include check-now-btn")
+	}
+
+	// 4. Test Alert endpoint & manifest/favicon links
+	server.SetNotifier(notify.New(config.AlertsConfig{}))
+	reqAlert := httptest.NewRequest(http.MethodPost, "/api/alerts/test", nil)
+	rrAlert := httptest.NewRecorder()
+	server.ServeHTTP(rrAlert, reqAlert)
+	if rrAlert.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 when no alert channels configured, got %d", rrAlert.Code)
+	}
+
+	reqFav := httptest.NewRequest(http.MethodGet, "/favicon.ico", nil)
+	rrFav := httptest.NewRecorder()
+	server.ServeHTTP(rrFav, reqFav)
+	if rrFav.Code != http.StatusOK {
+		t.Errorf("expected 200 for /favicon.ico, got %d", rrFav.Code)
+	}
+
+	if !strings.Contains(rrIndex.Body.String(), `rel="manifest"`) {
+		t.Errorf("expected index page to include PWA manifest link")
 	}
 }

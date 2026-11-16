@@ -386,8 +386,8 @@ func (s *Store) GetAllSystems() []SystemSnapshot {
 	return res
 }
 
-// GetStats returns current system-wide aggregates.
-func (s *Store) GetStats() StatsSnapshot {
+// GetSummaryCounts returns lightweight system-wide aggregates without building full snapshots.
+func (s *Store) GetSummaryCounts() StatsSnapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -399,8 +399,16 @@ func (s *Store) GetStats() StatsSnapshot {
 	}
 
 	for _, sys := range s.systems {
-		snap := s.buildSnapshot(sys)
-		switch snap.WorstStatus {
+		worst := StatusUnknown
+		if sys.dns.configured && sys.ip.configured {
+			worst = WorstStatus(sys.dns.status, sys.ip.status)
+		} else if sys.dns.configured {
+			worst = sys.dns.status
+		} else if sys.ip.configured {
+			worst = sys.ip.status
+		}
+
+		switch worst {
 		case StatusUP:
 			stats.UpCount++
 		case StatusDegraded:
@@ -410,7 +418,7 @@ func (s *Store) GetStats() StatsSnapshot {
 		case StatusUnknown:
 			stats.UnknownCount++
 		}
-		stats.WorstStatus = WorstStatus(stats.WorstStatus, snap.WorstStatus)
+		stats.WorstStatus = WorstStatus(stats.WorstStatus, worst)
 	}
 
 	if stats.Total > 0 {
@@ -420,6 +428,11 @@ func (s *Store) GetStats() StatsSnapshot {
 	}
 
 	return stats
+}
+
+// GetStats returns current system-wide aggregates.
+func (s *Store) GetStats() StatsSnapshot {
+	return s.GetSummaryCounts()
 }
 
 func (s *Store) buildSnapshot(sys *systemState) SystemSnapshot {

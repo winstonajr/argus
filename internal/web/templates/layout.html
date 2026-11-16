@@ -4,6 +4,24 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{if .Title}}{{.Title}} — {{end}}Argus</title>
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#0E131A">
+  <script>
+    (function() {
+      var savedTheme = localStorage.getItem('argus-theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.setAttribute('data-theme', savedTheme || (prefersDark ? 'dark' : 'light'));
+      if (new URLSearchParams(window.location.search).get('view') === 'tv') {
+        document.documentElement.classList.add('tv-mode');
+      }
+      if (localStorage.getItem('argus-view') === 'compact') {
+        document.documentElement.classList.add('view-compact');
+      }
+    })();
+  </script>
   <link rel="stylesheet" href="/static/css/tokens.css">
   <link rel="stylesheet" href="/static/css/app.css">
   <script src="/static/vendor/htmx.min.js"></script>
@@ -18,7 +36,7 @@
   <header class="header">
     <div class="header__left">
       <a href="/" class="header__logo">
-        <svg class="icon" style="width:20px;height:20px;"><use href="#icon-radar"></use></svg>
+        <img src="/static/favicon.png" alt="Argus" class="header__logo-img" width="26" height="26">
         <span>Argus</span>
       </a>
     </div>
@@ -56,6 +74,10 @@
       </div>
 
       {{if not .HideSearch}}
+      <button class="btn-icon" id="sort-toggle-btn" title="Ordenar por prioridade (críticos no topo)" aria-label="Ordenar por prioridade">
+        <svg class="icon"><use href="#icon-sort"></use></svg>
+      </button>
+
       <button class="btn-icon" id="view-toggle-btn" title="Alternar visualização Cards / Compacto" aria-label="Visualização compacta">
         <svg class="icon"><use href="#icon-list"></use></svg>
       </button>
@@ -64,6 +86,12 @@
       <button class="btn-icon" id="sound-toggle-btn" title="Alerta sonoro (Silenciado)" aria-label="Alerta sonoro">
         <svg class="icon"><use href="#icon-bell-off"></use></svg>
       </button>
+
+      {{if not .HideSearch}}
+      <button class="btn-icon" id="test-alert-btn" title="Testar envio de alertas" aria-label="Testar envio de alertas">
+        <svg class="icon"><use href="#icon-send"></use></svg>
+      </button>
+      {{end}}
 
       <button class="btn-icon" id="tv-toggle-btn" title="Modo TV / Sala de Operações" aria-label="Modo TV">
         <svg class="icon"><use href="#icon-tv"></use></svg>

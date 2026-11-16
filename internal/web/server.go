@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -19,6 +20,7 @@ import (
 	"argus/internal/checker"
 	"argus/internal/config"
 	"argus/internal/monitor"
+	"argus/internal/notify"
 	"argus/internal/storage"
 )
 
@@ -46,18 +48,25 @@ type Server struct {
 	historyTmpl *template.Template
 	statusTmpl  *template.Template
 	iconsSVG    template.HTML
-	sseMu       sync.RWMutex
-	sseClients  map[chan sseEvent]struct{}
+	sseMu           sync.RWMutex
+	sseClients      map[chan sseEvent]struct{}
+	triggerMu       sync.RWMutex
+	checkTrigger    func(string) bool
+	notifierMu      sync.RWMutex
+	notifier        *notify.Notifier
+	manualCheckMu   sync.Mutex
+	lastManualCheck map[string]time.Time
 }
 
 // NewServer initializes the HTTP routing and parses embedded templates.
 func NewServer(cfg *config.Config, store *monitor.Store, db *storage.DB) (*Server, error) {
 	s := &Server{
-		cfg:        cfg,
-		store:      store,
-		storage:    db,
-		mux:        http.NewServeMux(),
-		sseClients: make(map[chan sseEvent]struct{}),
+		cfg:             cfg,
+		store:           store,
+		storage:         db,
+		mux:             http.NewServeMux(),
+		sseClients:      make(map[chan sseEvent]struct{}),
+		lastManualCheck: make(map[string]time.Time),
 	}
 
 	// Read inline SVG icons
@@ -121,6 +130,16 @@ func (s *Server) routes() {
 		log.Fatalf("failed to create static sub FS: %v", err)
 	}
 	s.mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(subStatic))))
+	s.mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		data, err := staticFS.ReadFile("static/favicon.ico")
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "image/x-icon")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		_, _ = w.Write(data)
+	})
 
 	// Web endpoints
 	s.mux.HandleFunc("GET /{$}", s.handleIndex)
@@ -134,10 +153,26 @@ func (s *Server) routes() {
 	// API and Health
 	s.mux.HandleFunc("GET /api/systems", s.handleAPISystems)
 	s.mux.HandleFunc("GET /api/systems/{id}", s.handleAPISystem)
+	s.mux.HandleFunc("POST /api/systems/{id}/check", s.handleTriggerCheck)
 	s.mux.HandleFunc("POST /api/systems/{id}/maintenance", s.handleToggleMaintenance)
+	s.mux.HandleFunc("POST /api/alerts/test", s.handleTestAlert)
 	s.mux.HandleFunc("GET /api/events", s.handleAPIEvents)
 	s.mux.HandleFunc("GET /metrics", s.handleMetrics)
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
+}
+
+// SetCheckTrigger registers a callback to execute an immediate system check.
+func (s *Server) SetCheckTrigger(fn func(string) bool) {
+	s.triggerMu.Lock()
+	s.checkTrigger = fn
+	s.triggerMu.Unlock()
+}
+
+// SetNotifier registers the notifier instance used for alert testing.
+func (s *Server) SetNotifier(n *notify.Notifier) {
+	s.notifierMu.Lock()
+	s.notifier = n
+	s.notifierMu.Unlock()
 }
 
 // UpdateConfig updates the server's configuration reference safely at runtime.
@@ -167,18 +202,43 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Strings(groups)
 
+	sort.SliceStable(systems, func(i, j int) bool {
+		ni := strings.ToLower(systems[i].Name)
+		nj := strings.ToLower(systems[j].Name)
+		if ni != nj {
+			return ni < nj
+		}
+		return systems[i].ID < systems[j].ID
+	})
+
+	statsHTML, err := s.renderStatsHTML()
+	if err != nil {
+		log.Printf("[ERROR] render index stats: %v", err)
+	}
+
+	var cardsBuf bytes.Buffer
+	for _, sys := range systems {
+		vm := toCardViewModel(sys)
+		vm.JustChanged = false
+		if err := s.cardTmpl.Execute(&cardsBuf, vm); err != nil {
+			log.Printf("[ERROR] render index card %s: %v", sys.ID, err)
+		}
+	}
+
 	data := struct {
 		Title      string
 		IconsSVG   template.HTML
 		HideSearch bool
-		Systems    []monitor.SystemSnapshot
 		Groups     []string
+		StatsHTML  template.HTML
+		CardsHTML  template.HTML
 	}{
 		Title:      "Painel de Operações",
 		IconsSVG:   s.iconsSVG,
 		HideSearch: false,
-		Systems:    systems,
 		Groups:     groups,
+		StatsHTML:  template.HTML(statsHTML),       //nolint:gosec
+		CardsHTML:  template.HTML(cardsBuf.String()), //nolint:gosec
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -218,7 +278,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) renderStatsHTML() (string, error) {
-	stats := s.store.GetStats()
+	stats := s.store.GetSummaryCounts()
 
 	lastCheckStr := "—"
 	if !stats.LastCheck.IsZero() {
@@ -468,33 +528,46 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		mtbfStr = formatDurationShort(stats.MTBF)
 	}
 
+	downDurStr := ""
+	if snap.DownDuration > 0 {
+		downDurStr = formatDurationShort(snap.DownDuration)
+	}
+
 	data := struct {
-		Title        string
-		IconsSVG     template.HTML
-		HideSearch   bool
-		Groups       []string
-		System       monitor.SystemSnapshot
-		Period       string
-		PeriodLabel  string
-		Stats        storage.SystemHistoryStats
-		MTTRStr      string
-		MTBFStr      string
-		Events       []eventViewModel
-		FailedChecks []failedCheckViewModel
-		Buckets      []timelineBucketViewModel
+		Title            string
+		IconsSVG         template.HTML
+		HideSearch       bool
+		Groups           []string
+		System           monitor.SystemSnapshot
+		WorstStatus      string
+		WorstStatusLower string
+		Diagnosis        string
+		DownDurationStr  string
+		Period           string
+		PeriodLabel      string
+		Stats            storage.SystemHistoryStats
+		MTTRStr          string
+		MTBFStr          string
+		Events           []eventViewModel
+		FailedChecks     []failedCheckViewModel
+		Buckets          []timelineBucketViewModel
 	}{
-		Title:        fmt.Sprintf("%s — Histórico", snap.Name),
-		IconsSVG:     s.iconsSVG,
-		HideSearch:   true,
-		System:       snap,
-		Period:       period,
-		PeriodLabel:  periodLabel,
-		Stats:        stats,
-		MTTRStr:      mttrStr,
-		MTBFStr:      mtbfStr,
-		Events:       eventVMs,
-		FailedChecks: failedVMs,
-		Buckets:      bucketVMs,
+		Title:            fmt.Sprintf("%s — Histórico", snap.Name),
+		IconsSVG:         s.iconsSVG,
+		HideSearch:       true,
+		System:           snap,
+		WorstStatus:      string(snap.WorstStatus),
+		WorstStatusLower: strings.ToLower(string(snap.WorstStatus)),
+		Diagnosis:        snap.Diagnosis,
+		DownDurationStr:  downDurStr,
+		Period:           period,
+		PeriodLabel:      periodLabel,
+		Stats:            stats,
+		MTTRStr:          mttrStr,
+		MTBFStr:          mtbfStr,
+		Events:           eventVMs,
+		FailedChecks:     failedVMs,
+		Buckets:          bucketVMs,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -537,12 +610,107 @@ func (s *Server) handleToggleMaintenance(w http.ResponseWriter, r *http.Request)
 		next = q == "true" || q == "1"
 	}
 	s.store.SetMaintenance(id, next)
+	if s.storage != nil {
+		if err := s.storage.SetMaintenanceOverride(r.Context(), id, next); err != nil {
+			log.Printf("[WARN] persist maintenance override for %s: %v", id, err)
+		}
+	}
 	s.broadcastSystemUpdate(id)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"system_id":      id,
 		"in_maintenance": next,
+	})
+}
+
+// Handler: POST /api/alerts/test
+func (s *Server) handleTestAlert(w http.ResponseWriter, r *http.Request) {
+	s.notifierMu.RLock()
+	n := s.notifier
+	s.notifierMu.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	if n == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "serviço de notificações indisponível"})
+		return
+	}
+
+	sent, err := n.SendTest(r.Context())
+	if err != nil {
+		status := http.StatusBadGateway
+		if errors.Is(err, notify.ErrNoChannelsConfigured) {
+			status = http.StatusBadRequest
+		}
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":       false,
+			"channels": sent,
+			"error":    err.Error(),
+		})
+		return
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":       true,
+		"channels": sent,
+	})
+}
+
+// Handler: POST /api/systems/{id}/check
+func (s *Server) handleTriggerCheck(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, ok := s.store.GetSystem(id); !ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "system not found"})
+		return
+	}
+
+	s.triggerMu.RLock()
+	trigger := s.checkTrigger
+	s.triggerMu.RUnlock()
+	if trigger == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "check trigger unavailable"})
+		return
+	}
+
+	const cooldown = 3 * time.Second
+	now := time.Now()
+	s.manualCheckMu.Lock()
+	if last, exists := s.lastManualCheck[id]; exists && now.Sub(last) < cooldown {
+		remaining := cooldown - now.Sub(last)
+		retryAfter := int((remaining + time.Second - 1) / time.Second)
+		if retryAfter < 1 {
+			retryAfter = 1
+		}
+		s.manualCheckMu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error":               "rate limit exceeded",
+			"retry_after_seconds": retryAfter,
+		})
+		return
+	}
+	s.lastManualCheck[id] = now
+	s.manualCheckMu.Unlock()
+
+	if !trigger(id) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "system not found"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"system_id": id,
+		"status":    "scheduled",
 	})
 }
 

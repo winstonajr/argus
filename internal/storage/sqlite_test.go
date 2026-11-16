@@ -143,4 +143,26 @@ func TestStorage_SQLiteFlow(t *testing.T) {
 	if latestEv.IsZero() {
 		t.Errorf("expected non-zero latest event time")
 	}
+
+	if err := db.SetMaintenanceOverride(ctx, "sys-1", true); err != nil {
+		t.Fatalf("SetMaintenanceOverride(true) failed: %v", err)
+	}
+	overrides, err := db.GetMaintenanceOverrides(ctx)
+	if err != nil {
+		t.Fatalf("GetMaintenanceOverrides failed: %v", err)
+	}
+	if !overrides["sys-1"] {
+		t.Errorf("expected sys-1 maintenance override to be true, got %+v", overrides)
+	}
+
+	if err := db.SetMaintenanceOverride(ctx, "sys-1", false); err != nil {
+		t.Fatalf("SetMaintenanceOverride(false) failed: %v", err)
+	}
+	overrides, err = db.GetMaintenanceOverrides(ctx)
+	if err != nil {
+		t.Fatalf("GetMaintenanceOverrides failed: %v", err)
+	}
+	if val, ok := overrides["sys-1"]; !ok || val {
+		t.Errorf("expected sys-1 maintenance override to be false, got %+v", overrides)
+	}
 }

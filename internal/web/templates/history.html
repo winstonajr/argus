@@ -20,6 +20,46 @@
     <div class="history-title-group">
       <h1 class="history-title">{{.System.Name}}</h1>
       <span class="mono" style="color:var(--text-muted);">{{.System.ID}}</span>
+      <button type="button"
+              id="check-now-btn"
+              class="period-btn"
+              data-system-id="{{.System.ID}}">
+        Testar Agora
+      </button>
+      <button type="button"
+              id="maintenance-toggle-btn"
+              class="period-btn {{if .System.InMaintenance}}active{{end}}"
+              data-system-id="{{.System.ID}}"
+              data-maintenance="{{.System.InMaintenance}}">
+        {{if .System.InMaintenance}}Desativar Manutenção{{else}}Modo Manutenção{{end}}
+      </button>
+    </div>
+
+    <div class="history-status-banner history-status-banner--{{.WorstStatusLower}}">
+      {{if eq .WorstStatus "UP"}}
+        <svg class="icon icon--inline" style="width:16px;height:16px;"><use href="#icon-up"></use></svg>
+        <div class="history-status-banner__text">
+          <strong>Operacional</strong>
+          <span>· Todos os alvos operacionais</span>
+        </div>
+      {{else if eq .WorstStatus "DOWN"}}
+        <svg class="icon icon--inline" style="width:16px;height:16px;"><use href="#icon-down"></use></svg>
+        <div class="history-status-banner__text">
+          <strong>{{if .Diagnosis}}{{.Diagnosis}}{{else}}Sistema fora do ar{{end}}</strong>
+          {{if .DownDurationStr}}<span class="mono">· há {{.DownDurationStr}}</span>{{end}}
+        </div>
+      {{else if eq .WorstStatus "DEGRADED"}}
+        <svg class="icon icon--inline" style="width:16px;height:16px;"><use href="#icon-degraded"></use></svg>
+        <div class="history-status-banner__text">
+          <strong>{{if .Diagnosis}}{{.Diagnosis}}{{else}}Instabilidade detectada{{end}}</strong>
+          {{if .DownDurationStr}}<span class="mono">· há {{.DownDurationStr}}</span>{{end}}
+        </div>
+      {{else}}
+        <svg class="icon icon--inline" style="width:16px;height:16px;"><use href="#icon-unknown"></use></svg>
+        <div class="history-status-banner__text">
+          <span>Aguardando telemetria inicial...</span>
+        </div>
+      {{end}}
     </div>
 
     <!-- Summary Metrics -->

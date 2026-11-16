@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"log"
@@ -127,11 +128,49 @@ func (n *Notifier) HandleEvent(e monitor.ChangeEvent) {
 	go n.dispatch(context.Background(), cfg, e, mttr)
 }
 
+// ErrNoChannelsConfigured is returned when testing alerts without any configured channel.
+var ErrNoChannelsConfigured = errors.New("nenhum canal de notificação configurado")
+
+// SendTest dispatches a synthetic test alert synchronously to all configured channels.
+func (n *Notifier) SendTest(ctx context.Context) (int, error) {
+	n.mu.Lock()
+	cfg := n.cfg
+	n.mu.Unlock()
+
+	if !alertsEnabled(cfg) {
+		return 0, ErrNoChannelsConfigured
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	defer cancel()
+
+	ev := monitor.ChangeEvent{
+		SystemID:   "argus-test",
+		SystemName: "Argus NOC",
+		Kind:       "teste",
+		FromStatus: monitor.StatusUnknown,
+		ToStatus:   monitor.StatusUP,
+		Diagnosis:  "Teste manual de notificação",
+		Detail:     "Se você recebeu esta mensagem, o canal de alertas está operacional.",
+		OccurredAt: time.Now(),
+	}
+
+	title := "[TESTE] Argus — Teste de Notificação"
+	body := "Diagnóstico: Teste manual de notificação\nDetalhe: Se você recebeu esta mensagem, o canal de alertas está operacional."
+	return n.sendToChannels(ctx, cfg, ev, 0, title, body)
+}
+
 func (n *Notifier) dispatch(ctx context.Context, cfg config.AlertsConfig, e monitor.ChangeEvent, mttr time.Duration) {
 	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
 
 	title, body := formatAlertMessage(e, mttr)
+	_, _ = n.sendToChannels(ctx, cfg, e, mttr, title, body)
+}
+
+func (n *Notifier) sendToChannels(ctx context.Context, cfg config.AlertsConfig, e monitor.ChangeEvent, mttr time.Duration, title, body string) (int, error) {
+	sent := 0
+	var errs []error
 
 	if url := strings.TrimSpace(cfg.Webhook.URL); url != "" {
 		payload := map[string]any{
@@ -149,6 +188,9 @@ func (n *Notifier) dispatch(ctx context.Context, cfg config.AlertsConfig, e moni
 		}
 		if err := n.postJSON(ctx, url, payload, cfg.Webhook.Headers); err != nil {
 			log.Printf("[WARN] notify webhook failed: %v", err)
+			errs = append(errs, fmt.Errorf("webhook: %w", err))
+		} else {
+			sent++
 		}
 	}
 
@@ -158,6 +200,9 @@ func (n *Notifier) dispatch(ctx context.Context, cfg config.AlertsConfig, e moni
 		}
 		if err := n.postJSON(ctx, url, payload, nil); err != nil {
 			log.Printf("[WARN] notify slack failed: %v", err)
+			errs = append(errs, fmt.Errorf("slack: %w", err))
+		} else {
+			sent++
 		}
 	}
 
@@ -167,6 +212,9 @@ func (n *Notifier) dispatch(ctx context.Context, cfg config.AlertsConfig, e moni
 		}
 		if err := n.postJSON(ctx, url, payload, nil); err != nil {
 			log.Printf("[WARN] notify discord failed: %v", err)
+			errs = append(errs, fmt.Errorf("discord: %w", err))
+		} else {
+			sent++
 		}
 	}
 
@@ -183,14 +231,22 @@ func (n *Notifier) dispatch(ctx context.Context, cfg config.AlertsConfig, e moni
 		}
 		if err := n.postJSON(ctx, tgURL, payload, nil); err != nil {
 			log.Printf("[WARN] notify telegram failed: %v", err)
+			errs = append(errs, fmt.Errorf("telegram: %w", err))
+		} else {
+			sent++
 		}
 	}
 
 	if strings.TrimSpace(cfg.Email.SMTPHost) != "" && len(cfg.Email.To) > 0 {
 		if err := n.sendEmail(ctx, cfg.Email, title, body); err != nil {
 			log.Printf("[WARN] notify email failed: %v", err)
+			errs = append(errs, fmt.Errorf("email: %w", err))
+		} else {
+			sent++
 		}
 	}
+
+	return sent, errors.Join(errs...)
 }
 
 func (n *Notifier) postJSON(ctx context.Context, url string, payload any, headers map[string]string) error {
