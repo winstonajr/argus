@@ -44,4 +44,8 @@ type SystemHistoryStats struct {
 	IPUptime        float64       `json:"ip_uptime"`
 	IncidentCount   int           `json:"incident_count"`
 	MaxDownDuration time.Duration `json:"max_down_duration"`
+	AvgLatencyMs    int64         `json:"avg_latency_ms"`
+	P95LatencyMs    int64         `json:"p95_latency_ms"`
+	MTTR            time.Duration `json:"mttr"`
+	MTBF            time.Duration `json:"mtbf"`
 }

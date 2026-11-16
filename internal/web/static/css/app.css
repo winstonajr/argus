@@ -87,7 +87,23 @@ button, input {
   align-items: center;
   gap: var(--sp-3);
   flex: 1;
-  max-width: 600px;
+  max-width: 780px;
+}
+
+.group-select {
+  height: 32px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.group-select:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .search-box {
@@ -215,6 +231,11 @@ button, input {
 .btn-icon:hover {
   background: var(--surface-2);
   color: var(--text);
+}
+
+.btn-icon.active {
+  background: var(--surface-2);
+  color: var(--accent);
 }
 
 /* ==========================================================================
@@ -692,6 +713,56 @@ button, input {
   z-index: 5;
 }
 
+/* Card Telemetry: Heartbeat Bar + Sparkline */
+.card__telemetry {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 2px 0;
+}
+
+.heartbeat-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  height: 14px;
+}
+
+.heartbeat-tick {
+  flex: 1;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--border);
+  opacity: 0.45;
+  transition: transform var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
+}
+
+.heartbeat-tick:hover {
+  transform: scaleY(1.25);
+  opacity: 1;
+}
+
+.heartbeat-tick--up {
+  background: var(--status-up);
+  opacity: 0.85;
+}
+
+.heartbeat-tick--degraded {
+  background: var(--status-degraded);
+  opacity: 0.95;
+}
+
+.heartbeat-tick--down {
+  background: var(--status-down);
+  opacity: 1;
+}
+
+.heartbeat-tick--unknown {
+  background: var(--border);
+  opacity: 0.3;
+}
+
 /* Sparkline SVG */
 .sparkline {
   width: 60px;
@@ -1117,4 +1188,100 @@ body.tv-mode .card__footer {
   .cards-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* SSL Certificate Badge */
+.ssl-badge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.ssl-badge--warn {
+  background: var(--status-degraded-tint);
+  border-color: var(--status-degraded);
+  color: var(--status-degraded);
+  font-weight: 600;
+}
+
+/* Compact / Table View Mode */
+.cards-grid--compact {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.cards-grid--compact .card {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-2) var(--sp-4);
+  gap: var(--sp-4);
+  border-width: 1px;
+  border-radius: var(--radius);
+}
+
+.cards-grid--compact .card__progress,
+.cards-grid--compact .card__footer {
+  display: none;
+}
+
+.cards-grid--compact .card__banner {
+  min-width: 155px;
+  padding: 4px 10px;
+}
+
+.cards-grid--compact .card__headline {
+  min-width: 200px;
+  flex: 1;
+}
+
+.cards-grid--compact .card__title {
+  font-size: var(--fs-md);
+}
+
+.cards-grid--compact .card__targets-grid {
+  display: flex;
+  gap: var(--sp-2);
+  min-width: 240px;
+}
+
+.cards-grid--compact .target-card {
+  padding: 4px 10px;
+  flex: 1;
+}
+
+.cards-grid--compact .card__diagnosis-slot {
+  min-height: 0;
+  padding: 4px 10px;
+  flex: 1;
+  max-width: 280px;
+}
+
+.cards-grid--compact .card__telemetry {
+  min-width: 160px;
+  max-width: 200px;
+}
+
+@media (max-width: 960px) {
+  .cards-grid--compact .card__telemetry,
+  .cards-grid--compact .card__diagnosis-slot {
+    display: none;
+  }
+}
+
+.maintenance-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.2);
+  color: var(--status-degraded);
+  border: 1px solid rgba(245, 158, 11, 0.4);
 }

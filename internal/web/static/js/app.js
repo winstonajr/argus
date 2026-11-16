@@ -29,26 +29,49 @@
     document.body.classList.toggle('tv-mode');
   }
 
-  // 3. Search and Status Filter
+  // 3. Search, Status and Group Filter
   let activeFilter = 'all';
+  let activeGroup = 'all';
   let searchQuery = '';
 
   function applyFilters() {
     const cards = document.querySelectorAll('.card[data-system-id]');
     cards.forEach(card => {
       const status = card.getAttribute('data-status') || '';
+      const group = (card.getAttribute('data-group') || '').toLowerCase();
       const name = (card.getAttribute('data-name') || '').toLowerCase();
       const id = (card.getAttribute('data-system-id') || '').toLowerCase();
 
       const matchesStatus = (activeFilter === 'all') || (status.toLowerCase() === activeFilter);
+      const matchesGroup = (activeGroup === 'all') || (group === activeGroup);
       const matchesSearch = !searchQuery || name.includes(searchQuery) || id.includes(searchQuery);
 
-      if (matchesStatus && matchesSearch) {
+      if (matchesStatus && matchesGroup && matchesSearch) {
         card.style.display = '';
       } else {
         card.style.display = 'none';
       }
     });
+  }
+
+  function initViewMode() {
+    const grid = document.getElementById('cards-grid');
+    const btn = document.getElementById('view-toggle-btn');
+    if (!grid) return;
+    const saved = localStorage.getItem('argus-view');
+    if (saved === 'compact') {
+      grid.classList.add('cards-grid--compact');
+      if (btn) btn.classList.add('active');
+    }
+  }
+
+  function toggleViewMode() {
+    const grid = document.getElementById('cards-grid');
+    const btn = document.getElementById('view-toggle-btn');
+    if (!grid) return;
+    const isCompact = grid.classList.toggle('cards-grid--compact');
+    if (btn) btn.classList.toggle('active', isCompact);
+    localStorage.setItem('argus-view', isCompact ? 'compact' : 'cards');
   }
 
   function setFilter(filter) {
@@ -63,27 +86,213 @@
     applyFilters();
   }
 
-  // 4. Update Tab Title & Indicator on Stats Swap
-  document.body.addEventListener('htmx:afterSwap', function(evt) {
-    if (evt.detail.target.id === 'stats-container') {
-      const downCountEl = document.getElementById('stat-down-val');
-      const liveDot = document.getElementById('live-dot');
-      if (liveDot) liveDot.classList.remove('disconnected');
+  // 4. Dynamic Reordering & Sound Alert (NOC)
+  const STATUS_RANK = { down: 3, degraded: 2, unknown: 1, up: 0 };
+  const prevStatuses = new Map();
+  let soundEnabled = false;
+  let audioCtx = null;
 
-      if (downCountEl) {
-        const downs = parseInt(downCountEl.textContent.trim(), 10) || 0;
-        if (downs > 0) {
-          document.title = `(${downs}) Argus — Sistemas Fora`;
-        } else {
-          document.title = 'Argus — Operacional';
-        }
+  function updateSoundButtonUI() {
+    const btn = document.getElementById('sound-toggle-btn');
+    if (!btn) return;
+    const useEl = btn.querySelector('use');
+    if (soundEnabled) {
+      btn.classList.add('active');
+      btn.setAttribute('title', 'Alerta sonoro (Ativo)');
+      if (useEl) useEl.setAttribute('href', '#icon-bell');
+    } else {
+      btn.classList.remove('active');
+      btn.setAttribute('title', 'Alerta sonoro (Silenciado)');
+      if (useEl) useEl.setAttribute('href', '#icon-bell-off');
+    }
+  }
+
+  function initSound() {
+    soundEnabled = localStorage.getItem('argus-sound') === 'on';
+    updateSoundButtonUI();
+  }
+
+  function toggleSound() {
+    soundEnabled = !soundEnabled;
+    localStorage.setItem('argus-sound', soundEnabled ? 'on' : 'off');
+    updateSoundButtonUI();
+    if (soundEnabled) {
+      playBeep(520, 0.08);
+    }
+  }
+
+  function playBeep(freq, dur) {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      if (!audioCtx) audioCtx = new Ctx();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + dur);
+    } catch (_) {
+      // Ignore audio errors if blocked by browser policy
+    }
+  }
+
+  function playDownAlert() {
+    if (!soundEnabled) return;
+    playBeep(440, 0.14);
+    setTimeout(() => playBeep(330, 0.22), 160);
+  }
+
+  function checkTransitionAndNotify(card) {
+    if (!card) return;
+    const id = card.getAttribute('data-system-id');
+    const status = (card.getAttribute('data-status') || '').toLowerCase();
+    if (!id || !status) return;
+
+    const prev = prevStatuses.get(id);
+    if (prev && prev !== 'down' && prev !== 'unknown' && status === 'down') {
+      playDownAlert();
+    }
+    if (!card.classList.contains('card--skeleton')) {
+      prevStatuses.set(id, status);
+    }
+  }
+
+  function reorderCards() {
+    const grid = document.getElementById('cards-grid');
+    if (!grid) return;
+    const cards = Array.from(grid.querySelectorAll('.card[data-system-id]'));
+    if (cards.length < 2) return;
+
+    const sorted = cards.slice().sort((a, b) => {
+      const sa = STATUS_RANK[(a.getAttribute('data-status') || 'unknown').toLowerCase()] ?? 1;
+      const sb = STATUS_RANK[(b.getAttribute('data-status') || 'unknown').toLowerCase()] ?? 1;
+      if (sa !== sb) return sb - sa;
+      const na = (a.getAttribute('data-name') || '').toLowerCase();
+      const nb = (b.getAttribute('data-name') || '').toLowerCase();
+      return na.localeCompare(nb);
+    });
+
+    let changed = false;
+    for (let i = 0; i < sorted.length; i++) {
+      if (cards[i] !== sorted[i]) {
+        changed = true;
+        break;
       }
     }
-    // Re-apply filters on updated cards
-    if (evt.detail.target.classList.contains('card')) {
+    if (changed) {
+      sorted.forEach(card => grid.appendChild(card));
+    }
+  }
+
+  function updateTabTitleFromStats() {
+    const downCountEl = document.getElementById('stat-down-val');
+    const liveDot = document.getElementById('live-dot');
+    if (liveDot) liveDot.classList.remove('disconnected');
+
+    if (downCountEl) {
+      const downs = parseInt(downCountEl.textContent.trim(), 10) || 0;
+      if (downs > 0) {
+        document.title = `(${downs}) Argus — Sistemas Fora`;
+      } else {
+        document.title = 'Argus — Operacional';
+      }
+    }
+  }
+
+  // 5. Update Tab Title & Indicator on Stats/Card Swap
+  document.body.addEventListener('htmx:afterSwap', function(evt) {
+    if (evt.detail.target.id === 'stats-container') {
+      updateTabTitleFromStats();
+    }
+    if (evt.detail.target.classList && evt.detail.target.classList.contains('card')) {
+      checkTransitionAndNotify(evt.detail.target);
       applyFilters();
+      reorderCards();
     }
   });
+
+  // 6. SSE Live Updates with Fallback Polling
+  let fallbackTimer = null;
+
+  function startFallbackPolling() {
+    if (fallbackTimer) return;
+    fallbackTimer = setInterval(function() {
+      if (window.htmx) {
+        const stats = document.getElementById('stats-container');
+        if (stats) htmx.ajax('GET', '/stats', { target: '#stats-container', swap: 'innerHTML' });
+        document.querySelectorAll('.card[data-system-id]').forEach(card => {
+          const id = card.getAttribute('data-system-id');
+          if (id) htmx.ajax('GET', '/cards/' + encodeURIComponent(id), { target: '#card-' + id, swap: 'outerHTML' });
+        });
+      }
+    }, 15000);
+  }
+
+  function stopFallbackPolling() {
+    if (fallbackTimer) {
+      clearInterval(fallbackTimer);
+      fallbackTimer = null;
+    }
+  }
+
+  function initSSE() {
+    if (!document.getElementById('cards-grid')) {
+      return;
+    }
+    if (typeof EventSource === 'undefined') {
+      startFallbackPolling();
+      return;
+    }
+
+    const es = new EventSource('/events');
+
+    es.onopen = function() {
+      stopFallbackPolling();
+      const liveDot = document.getElementById('live-dot');
+      if (liveDot) liveDot.classList.remove('disconnected');
+    };
+
+    es.addEventListener('card', function(e) {
+      try {
+        const payload = JSON.parse(e.data);
+        const existing = document.getElementById('card-' + payload.id);
+        if (!existing || !payload.html) return;
+
+        const tpl = document.createElement('template');
+        tpl.innerHTML = payload.html.trim();
+        const nextCard = tpl.content.firstElementChild;
+        if (!nextCard) return;
+
+        existing.replaceWith(nextCard);
+        if (window.htmx) htmx.process(nextCard);
+        checkTransitionAndNotify(nextCard);
+        applyFilters();
+        reorderCards();
+      } catch (_) {}
+    });
+
+    es.addEventListener('stats', function(e) {
+      try {
+        const payload = JSON.parse(e.data);
+        const statsEl = document.getElementById('stats-container');
+        if (!statsEl || !payload.html) return;
+        statsEl.innerHTML = payload.html;
+        updateTabTitleFromStats();
+      } catch (_) {}
+    });
+
+    es.onerror = function() {
+      const liveDot = document.getElementById('live-dot');
+      if (liveDot) liveDot.classList.add('disconnected');
+      startFallbackPolling();
+    };
+  }
 
   // 5. Network / HTMX Error Handling
   function markCardStale(card) {
@@ -145,9 +354,26 @@
   window.addEventListener('DOMContentLoaded', function() {
     initTheme();
     initTVMode();
+    initViewMode();
+    initSound();
+    initSSE();
 
     const themeBtn = document.getElementById('theme-toggle-btn');
     if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
+
+    const viewBtn = document.getElementById('view-toggle-btn');
+    if (viewBtn) viewBtn.addEventListener('click', toggleViewMode);
+
+    const soundBtn = document.getElementById('sound-toggle-btn');
+    if (soundBtn) soundBtn.addEventListener('click', toggleSound);
+
+    const groupSelect = document.getElementById('group-filter');
+    if (groupSelect) {
+      groupSelect.addEventListener('change', function(e) {
+        activeGroup = (e.target.value || 'all').toLowerCase();
+        applyFilters();
+      });
+    }
 
     const tvBtn = document.getElementById('tv-toggle-btn');
     if (tvBtn) tvBtn.addEventListener('click', toggleTVMode);

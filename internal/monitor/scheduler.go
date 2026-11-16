@@ -99,8 +99,13 @@ func (s *Scheduler) runDNSLoop(ctx context.Context, sys config.SystemConfig, jit
 func (s *Scheduler) executeDNS(ctx context.Context, sys config.SystemConfig) {
 	opts := checker.CheckOptions{
 		URL:                sys.URL,
+		Method:             sys.Method,
+		Headers:            sys.Headers,
 		HealthPath:         sys.HealthPath,
 		ExpectedStatus:     sys.ExpectedStatus,
+		ExpectedBody:       sys.ExpectedBody,
+		ExpectedDNS:        sys.ExpectedDNS,
+		JSONPath:           sys.JSONPath,
 		Timeout:            sys.EffectiveHTTPTimeout(s.cfg.Defaults),
 		InsecureSkipVerify: sys.InsecureSkipVerify,
 	}
@@ -139,6 +144,12 @@ func (s *Scheduler) executeIP(ctx context.Context, sys config.SystemConfig) {
 	if sys.IsIPHTTP() {
 		opts := checker.CheckOptions{
 			URL:                sys.IP,
+			Method:             sys.Method,
+			Headers:            sys.Headers,
+			HealthPath:         sys.HealthPath,
+			ExpectedStatus:     sys.ExpectedStatus,
+			ExpectedBody:       sys.ExpectedBody,
+			JSONPath:           sys.JSONPath,
 			Timeout:            sys.EffectiveHTTPTimeout(s.cfg.Defaults),
 			InsecureSkipVerify: sys.InsecureSkipVerify,
 		}

@@ -23,9 +23,15 @@ func Diagnose(dns *CheckSnapshot, ip *CheckSnapshot) (summary string, detail str
 		return "Sem permissão ICMP", "Necessário conceder cap_net_raw no host/container"
 	}
 
-	// 2. TLS error
+	// 2. TLS error or expiring soon
 	if dns != nil && dns.Configured && dns.LastResult.ErrorCat == checker.CatTLS {
 		return "Certificado TLS inválido", dns.LastResult.Error
+	}
+	if dns != nil && dns.Configured && dns.LastResult.HasTLS && dns.LastResult.OK && dns.Status == StatusDegraded && dns.LastResult.TLSDaysLeft < 15 {
+		return fmt.Sprintf("Certificado TLS expira em %dd", dns.LastResult.TLSDaysLeft), "Renove o certificado SSL/TLS antes do vencimento"
+	}
+	if dns != nil && dns.Configured && dns.LastResult.ErrorCat == checker.CatUnexpectedBody {
+		return "Conteúdo inesperado", dns.LastResult.Error
 	}
 
 	// 3. DNS domain resolution failure

@@ -42,14 +42,15 @@ func WorstStatus(a, b Status) Status {
 
 // ChangeEvent represents a transition between statuses.
 type ChangeEvent struct {
-	SystemID   string
-	SystemName string
-	Kind       string // "dns" or "ip"
-	FromStatus Status
-	ToStatus   Status
-	Diagnosis  string
-	Detail     string
-	OccurredAt time.Time
+	SystemID      string
+	SystemName    string
+	Kind          string // "dns" or "ip"
+	FromStatus    Status
+	ToStatus      Status
+	Diagnosis     string
+	Detail        string
+	InMaintenance bool
+	OccurredAt    time.Time
 }
 
 // HeartbeatTick represents a single slot in the 30-slot heartbeat bar.
@@ -75,13 +76,17 @@ type CheckSnapshot struct {
 type SystemSnapshot struct {
 	ID             string
 	Name           string
+	Group          string
+	Tags           []string
 	URL            string
 	IP             string
 	IsIPHTTP       bool
 	TCPPort        int
 	WorstStatus    Status
 	Diagnosis      string
+	InMaintenance  bool
 	DownDuration   time.Duration
+	Uptime1h       float64
 	LastCheckedAt  time.Time
 	LastChange     time.Time
 	DNS            CheckSnapshot

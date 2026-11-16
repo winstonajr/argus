@@ -11,6 +11,9 @@
         <a href="?period=1h" class="period-btn {{if eq .Period "1h"}}active{{end}}">Última 1h</a>
         <a href="?period=24h" class="period-btn {{if eq .Period "24h"}}active{{end}}">Últimas 24h</a>
         <a href="?period=7d" class="period-btn {{if eq .Period "7d"}}active{{end}}">Últimos 7 dias</a>
+        <a href="?period=30d" class="period-btn {{if eq .Period "30d"}}active{{end}}">Últimos 30 dias</a>
+        <a href="/systems/{{.System.ID}}/export?period={{.Period}}&format=csv" class="period-btn">CSV</a>
+        <a href="/systems/{{.System.ID}}/export?period={{.Period}}&format=json" class="period-btn">JSON</a>
       </div>
     </div>
 
@@ -34,6 +37,16 @@
       <div class="metric-card">
         <div class="metric-card__label">Incidentes Registrados</div>
         <div class="metric-card__value">{{.Stats.IncidentCount}}</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-card__label">Latência Média / P95</div>
+        <div class="metric-card__value mono" style="font-size:var(--fs-lg);">{{.Stats.AvgLatencyMs}}ms / {{.Stats.P95LatencyMs}}ms</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-card__label">MTTR / MTBF</div>
+        <div class="metric-card__value mono" style="font-size:var(--fs-lg);">{{.MTTRStr}} / {{.MTBFStr}}</div>
       </div>
 
       <div class="metric-card">

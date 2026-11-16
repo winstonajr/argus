@@ -20,7 +20,46 @@ type Config struct {
 	Server   ServerConfig   `yaml:"server"`
 	Storage  StorageConfig  `yaml:"storage"`
 	Defaults DefaultsConfig `yaml:"defaults"`
+	Alerts   AlertsConfig   `yaml:"alerts"`
 	Systems  []SystemConfig `yaml:"systems"`
+}
+
+// AlertsConfig holds notification channel settings.
+type AlertsConfig struct {
+	Cooldown         time.Duration        `yaml:"cooldown"`
+	NotifyOnDegraded bool                 `yaml:"notify_on_degraded"`
+	Webhook          WebhookAlertConfig   `yaml:"webhook"`
+	Slack            SlackAlertConfig     `yaml:"slack"`
+	Discord          DiscordAlertConfig   `yaml:"discord"`
+	Telegram         TelegramAlertConfig  `yaml:"telegram"`
+	Email            EmailAlertConfig     `yaml:"email"`
+}
+
+type WebhookAlertConfig struct {
+	URL     string            `yaml:"url"`
+	Headers map[string]string `yaml:"headers"`
+}
+
+type SlackAlertConfig struct {
+	WebhookURL string `yaml:"webhook_url"`
+}
+
+type DiscordAlertConfig struct {
+	WebhookURL string `yaml:"webhook_url"`
+}
+
+type TelegramAlertConfig struct {
+	BotToken string `yaml:"bot_token"`
+	ChatID   string `yaml:"chat_id"`
+}
+
+type EmailAlertConfig struct {
+	SMTPHost string   `yaml:"smtp_host"`
+	SMTPPort int      `yaml:"smtp_port"`
+	Username string   `yaml:"username"`
+	Password string   `yaml:"password"`
+	From     string   `yaml:"from"`
+	To       []string `yaml:"to"`
 }
 
 // ServerConfig holds HTTP server parameters.
@@ -42,23 +81,33 @@ type DefaultsConfig struct {
 	PingTimeout     time.Duration `yaml:"ping_timeout"`
 	FailThreshold   int           `yaml:"fail_threshold"`
 	DegradedLatency time.Duration `yaml:"degraded_latency"`
+	TLSWarnDays     int           `yaml:"tls_warn_days"`
 }
 
 // SystemConfig represents one monitored system target.
 type SystemConfig struct {
-	ID                 string        `yaml:"id"`
-	Name               string        `yaml:"name"`
-	URL                string        `yaml:"url"`
-	HealthPath         string        `yaml:"health_path"`
-	ExpectedStatus     []int         `yaml:"expected_status"`
-	IP                 string        `yaml:"ip"`
-	HostURL            string        `yaml:"host_url"`
-	TCPPort            int           `yaml:"tcp_port"`
-	Interval           time.Duration `yaml:"interval"`
-	HTTPTimeout        time.Duration `yaml:"http_timeout"`
-	PingTimeout        time.Duration `yaml:"ping_timeout"`
-	FailThreshold      int           `yaml:"fail_threshold"`
-	InsecureSkipVerify bool          `yaml:"insecure_skip_verify"`
+	ID                 string            `yaml:"id"`
+	Name               string            `yaml:"name"`
+	Group              string            `yaml:"group"`
+	Tags               []string          `yaml:"tags"`
+	URL                string            `yaml:"url"`
+	Method             string            `yaml:"method"`
+	Headers            map[string]string `yaml:"headers"`
+	HealthPath         string            `yaml:"health_path"`
+	ExpectedStatus     []int             `yaml:"expected_status"`
+	ExpectedBody       string            `yaml:"expected_body"`
+	ExpectedDNS        []string          `yaml:"expected_dns"`
+	JSONPath           string            `yaml:"json_path"`
+	Maintenance        bool              `yaml:"maintenance"`
+	IP                 string            `yaml:"ip"`
+	HostURL            string            `yaml:"host_url"`
+	TCPPort            int               `yaml:"tcp_port"`
+	Interval           time.Duration     `yaml:"interval"`
+	HTTPTimeout        time.Duration     `yaml:"http_timeout"`
+	PingTimeout        time.Duration     `yaml:"ping_timeout"`
+	FailThreshold      int               `yaml:"fail_threshold"`
+	TLSWarnDays        int               `yaml:"tls_warn_days"`
+	InsecureSkipVerify bool              `yaml:"insecure_skip_verify"`
 }
 
 // EffectiveInterval returns system specific interval or default.
@@ -91,6 +140,17 @@ func (s *SystemConfig) EffectiveFailThreshold(d DefaultsConfig) int {
 		return s.FailThreshold
 	}
 	return d.FailThreshold
+}
+
+// EffectiveTLSWarnDays returns system specific TLS warning threshold or default.
+func (s *SystemConfig) EffectiveTLSWarnDays(d DefaultsConfig) int {
+	if s.TLSWarnDays > 0 {
+		return s.TLSWarnDays
+	}
+	if d.TLSWarnDays > 0 {
+		return d.TLSWarnDays
+	}
+	return 15
 }
 
 // IsIPHTTP returns true if IP is configured as an HTTP or HTTPS endpoint.
@@ -142,6 +202,10 @@ func DefaultConfig() *Config {
 			PingTimeout:     3 * time.Second,
 			FailThreshold:   2,
 			DegradedLatency: 2 * time.Second,
+			TLSWarnDays:     15,
+		},
+		Alerts: AlertsConfig{
+			Cooldown: 5 * time.Minute,
 		},
 		Systems: []SystemConfig{},
 	}
@@ -218,6 +282,23 @@ func (c *Config) Validate() error {
 			u, err := url.ParseRequestURI(sys.URL)
 			if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
 				return fmt.Errorf("system %q has invalid url %q (must be http:// or https://)", sys.ID, sys.URL)
+			}
+		}
+
+		sys.Group = strings.TrimSpace(sys.Group)
+		sys.Method = strings.ToUpper(strings.TrimSpace(sys.Method))
+		if sys.Method != "" {
+			switch sys.Method {
+			case "GET", "HEAD", "POST", "PUT", "OPTIONS":
+			default:
+				return fmt.Errorf("system %q has unsupported HTTP method %q", sys.ID, sys.Method)
+			}
+		}
+
+		if strings.HasPrefix(sys.ExpectedBody, "/") && strings.HasSuffix(sys.ExpectedBody, "/") && len(sys.ExpectedBody) > 2 {
+			pattern := sys.ExpectedBody[1 : len(sys.ExpectedBody)-1]
+			if _, err := regexp.Compile(pattern); err != nil {
+				return fmt.Errorf("system %q has invalid expected_body regex %q: %w", sys.ID, sys.ExpectedBody, err)
 			}
 		}
 

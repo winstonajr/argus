@@ -123,4 +123,24 @@ func TestStorage_SQLiteFlow(t *testing.T) {
 	if stats.IPUptime != 100.0 {
 		t.Errorf("expected 100%% IP uptime, got %.2f", stats.IPUptime)
 	}
+
+	// Recent checks (oldest to newest)
+	recent, err := db.GetRecentChecks(ctx, "sys-1", "dns", 10)
+	if err != nil {
+		t.Fatalf("GetRecentChecks failed: %v", err)
+	}
+	if len(recent) != 2 {
+		t.Fatalf("expected 2 recent checks, got %d", len(recent))
+	}
+	if !recent[0].OK || recent[1].OK {
+		t.Errorf("expected chronological order (OK first, then fail), got %+v", recent)
+	}
+
+	latestEv, err := db.GetLatestEventTime(ctx, "sys-1", "dns")
+	if err != nil {
+		t.Fatalf("GetLatestEventTime failed: %v", err)
+	}
+	if latestEv.IsZero() {
+		t.Errorf("expected non-zero latest event time")
+	}
 }
