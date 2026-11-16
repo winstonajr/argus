@@ -558,84 +558,75 @@ button, input {
   margin-left: 4px;
 }
 
-/* Diagnosis / Status Slot (Invariable height and layout stability across all states) */
-.card__diagnosis-slot {
-  height: 46px;
-  min-height: 46px;
-  max-height: 46px;
-  flex-shrink: 0;
-  box-sizing: border-box;
+/* History Current Status / Diagnosis Banner */
+.history-status-banner {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
+  gap: 10px;
+  padding: 10px 14px;
   border-radius: var(--radius);
-  font-size: 12px;
-  line-height: 1.3;
-  overflow: hidden;
-  transition: background-color var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
 }
 
-.card__diagnosis-slot svg.icon {
+.history-status-banner svg.icon {
   flex-shrink: 0;
 }
 
-.card__diagnosis-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  flex: 1;
+.history-status-banner__text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
 }
 
-.card__diagnosis-text strong {
+.history-status-banner__text strong {
   font-weight: 700;
 }
 
-.card__diagnosis-slot--up {
+.history-status-banner--up {
   background: rgba(47, 191, 113, 0.08);
   border: 1px solid rgba(47, 191, 113, 0.22);
   color: var(--status-up);
 }
 
-[data-theme="light"] .card__diagnosis-slot--up {
+[data-theme="light"] .history-status-banner--up {
   background: rgba(47, 191, 113, 0.12);
   border: 1px solid rgba(47, 191, 113, 0.3);
   color: #1a7a43;
 }
 
-.card__diagnosis-slot--down {
+.history-status-banner--down {
   background: rgba(240, 82, 79, 0.16);
   border: 1px solid rgba(240, 82, 79, 0.45);
   color: #FFA5A3;
 }
 
-[data-theme="light"] .card__diagnosis-slot--down {
+[data-theme="light"] .history-status-banner--down {
   background: rgba(240, 82, 79, 0.12);
   border: 1px solid rgba(240, 82, 79, 0.4);
   color: #C02622;
 }
 
-.card__diagnosis-slot--degraded {
+.history-status-banner--degraded {
   background: rgba(224, 165, 38, 0.16);
   border: 1px solid rgba(224, 165, 38, 0.45);
   color: #FFD980;
 }
 
-[data-theme="light"] .card__diagnosis-slot--degraded {
+[data-theme="light"] .history-status-banner--degraded {
   background: rgba(224, 165, 38, 0.12);
   border: 1px solid rgba(224, 165, 38, 0.4);
   color: #8C6500;
 }
 
-.card__diagnosis-slot--unknown {
+.history-status-banner--unknown {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--border);
   color: var(--text-muted);
 }
 
-[data-theme="light"] .card__diagnosis-slot--unknown {
+[data-theme="light"] .history-status-banner--unknown {
   background: rgba(0, 0, 0, 0.03);
   border: 1px solid var(--border);
   color: var(--text-muted);
@@ -1088,16 +1079,6 @@ button, input {
   height: 11px;
 }
 
-.tv-mode .card__diagnosis-slot {
-  height: 58px;
-  min-height: 58px;
-  max-height: 58px;
-  flex-shrink: 0;
-  font-size: 15px;
-  padding: 8px 14px;
-  gap: 10px;
-}
-
 .tv-mode .card__alert {
   font-size: 16px;
   padding: 12px 16px;
@@ -1209,21 +1190,13 @@ html.view-compact .cards-grid .target-card {
   flex: 1;
 }
 
-html.view-compact .cards-grid .card__diagnosis-slot {
-  min-height: 0;
-  padding: 4px 10px;
-  flex: 1;
-  max-width: 280px;
-}
-
 html.view-compact .cards-grid .card__telemetry {
   min-width: 160px;
   max-width: 200px;
 }
 
 @media (max-width: 960px) {
-  html.view-compact .cards-grid .card__telemetry,
-  html.view-compact .cards-grid .card__diagnosis-slot {
+  html.view-compact .cards-grid .card__telemetry {
     display: none;
   }
 }

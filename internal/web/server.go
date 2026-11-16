@@ -493,33 +493,46 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		mtbfStr = formatDurationShort(stats.MTBF)
 	}
 
+	downDurStr := ""
+	if snap.DownDuration > 0 {
+		downDurStr = formatDurationShort(snap.DownDuration)
+	}
+
 	data := struct {
-		Title        string
-		IconsSVG     template.HTML
-		HideSearch   bool
-		Groups       []string
-		System       monitor.SystemSnapshot
-		Period       string
-		PeriodLabel  string
-		Stats        storage.SystemHistoryStats
-		MTTRStr      string
-		MTBFStr      string
-		Events       []eventViewModel
-		FailedChecks []failedCheckViewModel
-		Buckets      []timelineBucketViewModel
+		Title            string
+		IconsSVG         template.HTML
+		HideSearch       bool
+		Groups           []string
+		System           monitor.SystemSnapshot
+		WorstStatus      string
+		WorstStatusLower string
+		Diagnosis        string
+		DownDurationStr  string
+		Period           string
+		PeriodLabel      string
+		Stats            storage.SystemHistoryStats
+		MTTRStr          string
+		MTBFStr          string
+		Events           []eventViewModel
+		FailedChecks     []failedCheckViewModel
+		Buckets          []timelineBucketViewModel
 	}{
-		Title:        fmt.Sprintf("%s — Histórico", snap.Name),
-		IconsSVG:     s.iconsSVG,
-		HideSearch:   true,
-		System:       snap,
-		Period:       period,
-		PeriodLabel:  periodLabel,
-		Stats:        stats,
-		MTTRStr:      mttrStr,
-		MTBFStr:      mtbfStr,
-		Events:       eventVMs,
-		FailedChecks: failedVMs,
-		Buckets:      bucketVMs,
+		Title:            fmt.Sprintf("%s — Histórico", snap.Name),
+		IconsSVG:         s.iconsSVG,
+		HideSearch:       true,
+		System:           snap,
+		WorstStatus:      string(snap.WorstStatus),
+		WorstStatusLower: strings.ToLower(string(snap.WorstStatus)),
+		Diagnosis:        snap.Diagnosis,
+		DownDurationStr:  downDurStr,
+		Period:           period,
+		PeriodLabel:      periodLabel,
+		Stats:            stats,
+		MTTRStr:          mttrStr,
+		MTBFStr:          mtbfStr,
+		Events:           eventVMs,
+		FailedChecks:     failedVMs,
+		Buckets:          bucketVMs,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

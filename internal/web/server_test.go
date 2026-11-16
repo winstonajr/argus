@@ -153,28 +153,35 @@ func TestServer_Endpoints(t *testing.T) {
 	}
 }
 
-func TestServer_CardDiagnosisSlot(t *testing.T) {
+func TestServer_HistoryStatusBannerAndCardWithoutDiagnosisSlot(t *testing.T) {
 	server, store, db := setupTestServer(t)
 	defer db.Close()
 
-	// 1. Index page renders real diagnosis slot directly (unknown when no results yet)
+	// 1. Index page and card do not render diagnosis slot
 	reqIndex := httptest.NewRequest(http.MethodGet, "/", nil)
 	rrIndex := httptest.NewRecorder()
 	server.ServeHTTP(rrIndex, reqIndex)
-	if !strings.Contains(rrIndex.Body.String(), "card__diagnosis-slot--unknown") {
-		t.Errorf("expected index to include unknown diagnosis slot")
+	if strings.Contains(rrIndex.Body.String(), "card__diagnosis-slot") {
+		t.Errorf("expected index card not to include diagnosis slot")
 	}
 
-	// 2. UNKNOWN status card (portal has no check results yet)
-	reqUnknown := httptest.NewRequest(http.MethodGet, "/cards/portal", nil)
+	// 2. UNKNOWN status on history page (portal has no check results yet)
+	reqCardUnknown := httptest.NewRequest(http.MethodGet, "/cards/portal", nil)
+	rrCardUnknown := httptest.NewRecorder()
+	server.ServeHTTP(rrCardUnknown, reqCardUnknown)
+	if strings.Contains(rrCardUnknown.Body.String(), "card__diagnosis-slot") {
+		t.Errorf("expected portal card not to include diagnosis slot")
+	}
+
+	reqUnknown := httptest.NewRequest(http.MethodGet, "/systems/portal/history", nil)
 	rrUnknown := httptest.NewRecorder()
 	server.ServeHTTP(rrUnknown, reqUnknown)
 	unknownBody := rrUnknown.Body.String()
-	if !strings.Contains(unknownBody, "card__diagnosis-slot--unknown") {
-		t.Errorf("expected portal card to have unknown diagnosis slot, got: %s", unknownBody)
+	if !strings.Contains(unknownBody, "history-status-banner--unknown") {
+		t.Errorf("expected portal history to have unknown status banner, got: %s", unknownBody)
 	}
 
-	// 3. UP status card
+	// 3. UP status on history page
 	store.RecordDNSResult("erp", checker.Result{
 		OK:         true,
 		StatusCode: 200,
@@ -186,18 +193,18 @@ func TestServer_CardDiagnosisSlot(t *testing.T) {
 		Latency:   10 * time.Millisecond,
 		CheckedAt: time.Now(),
 	})
-	reqUP := httptest.NewRequest(http.MethodGet, "/cards/erp", nil)
+	reqUP := httptest.NewRequest(http.MethodGet, "/systems/erp/history", nil)
 	rrUP := httptest.NewRecorder()
 	server.ServeHTTP(rrUP, reqUP)
 	upBody := rrUP.Body.String()
-	if !strings.Contains(upBody, "card__diagnosis-slot--up") {
-		t.Errorf("expected erp card to have up diagnosis slot, got: %s", upBody)
+	if !strings.Contains(upBody, "history-status-banner--up") {
+		t.Errorf("expected erp history to have up status banner, got: %s", upBody)
 	}
 	if !strings.Contains(upBody, "Todos os alvos operacionais") {
-		t.Errorf("expected erp card to contain 'Todos os alvos operacionais', got: %s", upBody)
+		t.Errorf("expected erp history to contain 'Todos os alvos operacionais', got: %s", upBody)
 	}
 
-	// 4. DOWN status card with diagnosis
+	// 4. DOWN status with diagnosis on history page
 	store.RecordDNSResult("erp", checker.Result{
 		OK:         false,
 		StatusCode: 502,
@@ -212,18 +219,18 @@ func TestServer_CardDiagnosisSlot(t *testing.T) {
 		ErrorCat:   checker.CatProxy,
 		CheckedAt:  time.Now(),
 	})
-	reqDown := httptest.NewRequest(http.MethodGet, "/cards/erp", nil)
+	reqDown := httptest.NewRequest(http.MethodGet, "/systems/erp/history", nil)
 	rrDown := httptest.NewRecorder()
 	server.ServeHTTP(rrDown, reqDown)
 	downBody := rrDown.Body.String()
-	if !strings.Contains(downBody, "card__diagnosis-slot--down") {
-		t.Errorf("expected erp card to have down diagnosis slot, got: %s", downBody)
+	if !strings.Contains(downBody, "history-status-banner--down") {
+		t.Errorf("expected erp history to have down status banner, got: %s", downBody)
 	}
-	if !strings.Contains(downBody, "502") {
-		t.Errorf("expected diagnosis to mention 502, got: %s", downBody)
+	if !strings.Contains(downBody, "Aplicação fora (borda Cloudflare)") {
+		t.Errorf("expected erp history diagnosis to mention 'Aplicação fora (borda Cloudflare)', got: %s", downBody)
 	}
 
-	// 5. DEGRADED status card
+	// 5. DEGRADED status on history page
 	// Recover to UP first
 	store.RecordDNSResult("erp", checker.Result{
 		OK:         true,
@@ -245,12 +252,12 @@ func TestServer_CardDiagnosisSlot(t *testing.T) {
 		ErrorCat:   checker.CatHTTP5xx,
 		CheckedAt:  time.Now(),
 	})
-	reqDegraded := httptest.NewRequest(http.MethodGet, "/cards/erp", nil)
+	reqDegraded := httptest.NewRequest(http.MethodGet, "/systems/erp/history", nil)
 	rrDegraded := httptest.NewRecorder()
 	server.ServeHTTP(rrDegraded, reqDegraded)
 	degradedBody := rrDegraded.Body.String()
-	if !strings.Contains(degradedBody, "card__diagnosis-slot--degraded") {
-		t.Errorf("expected erp card to have degraded diagnosis slot, got: %s", degradedBody)
+	if !strings.Contains(degradedBody, "history-status-banner--degraded") {
+		t.Errorf("expected erp history to have degraded status banner, got: %s", degradedBody)
 	}
 }
 
