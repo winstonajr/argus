@@ -1,5 +1,5 @@
 {{define "content"}}
-<div id="stats-container" hx-get="/stats" hx-trigger="load, every 15s" hx-swap="innerHTML">
+<div id="stats-container" hx-get="/stats" hx-trigger="load" hx-swap="innerHTML">
   <!-- Stats bar loads here independently -->
   <div class="stats-bar" style="opacity: 0.5;">
     <div class="stats-grid">
@@ -15,11 +15,12 @@
        class="card card--skeleton"
        data-system-id="{{$sys.ID}}"
        data-name="{{$sys.Name}}"
+       data-group="{{$sys.Group}}"
        data-status="unknown"
        style="--i: {{$idx}}"
        href="/systems/{{$sys.ID}}/history"
        hx-get="/cards/{{$sys.ID}}"
-       hx-trigger="load, every 15s"
+       hx-trigger="load"
        hx-swap="outerHTML settle:200ms">
       <div class="card__banner card__banner--unknown">
         <div class="card__banner-status">

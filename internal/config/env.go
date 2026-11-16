@@ -122,4 +122,70 @@ func (c *Config) applyEnvOverrides() {
 			c.Defaults.DegradedLatency = d
 		}
 	}
+	if tlsWarn := os.Getenv("ARGUS_DEFAULTS_TLS_WARN_DAYS"); tlsWarn != "" {
+		if n, err := strconv.Atoi(tlsWarn); err == nil && n > 0 {
+			c.Defaults.TLSWarnDays = n
+		}
+	}
+
+	c.applyAlertEnvOverrides()
+}
+
+func (c *Config) applyAlertEnvOverrides() {
+	if cooldown := os.Getenv("ARGUS_ALERTS_COOLDOWN"); cooldown != "" {
+		if d, err := time.ParseDuration(cooldown); err == nil {
+			c.Alerts.Cooldown = d
+		}
+	}
+	if notifyDeg := os.Getenv("ARGUS_ALERTS_NOTIFY_ON_DEGRADED"); notifyDeg != "" {
+		if b, err := strconv.ParseBool(notifyDeg); err == nil {
+			c.Alerts.NotifyOnDegraded = b
+		}
+	}
+
+	if v := os.Getenv("ARGUS_ALERTS_WEBHOOK_URL"); v != "" {
+		c.Alerts.Webhook.URL = v
+	}
+	if v := os.Getenv("ARGUS_ALERTS_SLACK_WEBHOOK_URL"); v != "" {
+		c.Alerts.Slack.WebhookURL = v
+	}
+	if v := os.Getenv("ARGUS_ALERTS_DISCORD_WEBHOOK_URL"); v != "" {
+		c.Alerts.Discord.WebhookURL = v
+	}
+	if v := os.Getenv("ARGUS_ALERTS_TELEGRAM_BOT_TOKEN"); v != "" {
+		c.Alerts.Telegram.BotToken = v
+	}
+	if v := os.Getenv("ARGUS_ALERTS_TELEGRAM_CHAT_ID"); v != "" {
+		c.Alerts.Telegram.ChatID = v
+	}
+
+	if v := os.Getenv("ARGUS_ALERTS_EMAIL_SMTP_HOST"); v != "" {
+		c.Alerts.Email.SMTPHost = v
+	}
+	if v := os.Getenv("ARGUS_ALERTS_EMAIL_SMTP_PORT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			c.Alerts.Email.SMTPPort = n
+		}
+	}
+	if v := os.Getenv("ARGUS_ALERTS_EMAIL_USERNAME"); v != "" {
+		c.Alerts.Email.Username = v
+	}
+	if v := os.Getenv("ARGUS_ALERTS_EMAIL_PASSWORD"); v != "" {
+		c.Alerts.Email.Password = v
+	}
+	if v := os.Getenv("ARGUS_ALERTS_EMAIL_FROM"); v != "" {
+		c.Alerts.Email.From = v
+	}
+	if v := os.Getenv("ARGUS_ALERTS_EMAIL_TO"); v != "" {
+		parts := strings.Split(v, ",")
+		recipients := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if trimmed := strings.TrimSpace(p); trimmed != "" {
+				recipients = append(recipients, trimmed)
+			}
+		}
+		if len(recipients) > 0 {
+			c.Alerts.Email.To = recipients
+		}
+	}
 }

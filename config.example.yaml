@@ -12,26 +12,59 @@ defaults:
   ping_timeout: 3s
   fail_threshold: 2
   degraded_latency: 2s
+  tls_warn_days: 15
+
+# Notificações (também configuráveis via variáveis ARGUS_ALERTS_* no Docker Compose / .env)
+alerts:
+  cooldown: 5m
+  notify_on_degraded: false
+  # webhook:
+  #   url: "${ARGUS_ALERTS_WEBHOOK_URL:-}"
+  # slack:
+  #   webhook_url: "${ARGUS_ALERTS_SLACK_WEBHOOK_URL:-}"
+  # discord:
+  #   webhook_url: "${ARGUS_ALERTS_DISCORD_WEBHOOK_URL:-}"
+  # telegram:
+  #   bot_token: "${ARGUS_ALERTS_TELEGRAM_BOT_TOKEN:-}"
+  #   chat_id: "${ARGUS_ALERTS_TELEGRAM_CHAT_ID:-}"
+  # email:
+  #   smtp_host: "${ARGUS_ALERTS_EMAIL_SMTP_HOST:-}"
+  #   smtp_port: 587
+  #   username: "${ARGUS_ALERTS_EMAIL_USERNAME:-}"
+  #   password: "${ARGUS_ALERTS_EMAIL_PASSWORD:-}"
+  #   from: "${ARGUS_ALERTS_EMAIL_FROM:-}"
+  #   to: ["ops@empresa.local"]
 
 systems:
   - id: "erp"
     name: "ERP Corporativo"
+    group: "Produção"
     url: "https://erp.empresa.local/health"
     health_path: "/health"
+    # method: "GET"
+    # headers:
+    #   Authorization: "Bearer ${ERP_HEALTH_TOKEN:-}"
+    # expected_body: "\"status\":\"ok\""
+    # json_path: "$.status == 'ok'"
+    # expected_dns: ["10.0.0.15"]
+    # maintenance: false
     # O campo 'ip' pode ser um IP puro (ping ICMP) ou URL interna HTTP(S) da VM/origem
     ip: "http://10.0.0.15:8080"
 
   - id: "portal"
     name: "Portal do Cliente"
+    group: "Produção"
     url: "https://portal.empresa.local"
     ip: "http://10.0.0.22"
 
   - id: "legado"
     name: "Sistema Legado"
+    group: "Infraestrutura"
     ip: "10.0.1.5"
     tcp_port: 22
 
   - id: "cloudflare-mock"
     name: "Edge API Gateway"
+    group: "Externos"
     url: "https://api.empresa.local"
     ip: "1.1.1.1"

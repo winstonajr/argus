@@ -2,6 +2,12 @@ package checker
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -153,5 +159,139 @@ func TestHTTPChecker_DNSFailure(t *testing.T) {
 	}
 	if res.ErrorCat != CatDNS {
 		t.Errorf("expected CatDNS, got %q", res.ErrorCat)
+	}
+}
+
+func TestHTTPChecker_MethodHeadersBodyAndTLS(t *testing.T) {
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer secret" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"healthy","db":"ok"}`))
+	}))
+	defer ts.Close()
+
+	c := NewHTTPChecker()
+
+	// 1. Substring match + TLS info
+	res := c.Check(context.Background(), CheckOptions{
+		URL:                ts.URL,
+		Method:             "POST",
+		Headers:            map[string]string{"Authorization": "Bearer secret"},
+		ExpectedBody:       `"status":"healthy"`,
+		InsecureSkipVerify: true,
+		Timeout:            2 * time.Second,
+	})
+	if !res.OK {
+		t.Fatalf("expected OK, got error: %s", res.Error)
+	}
+	if !res.HasTLS {
+		t.Errorf("expected HasTLS=true for TLS server")
+	}
+
+	// 2. Regex match
+	resRegex := c.Check(context.Background(), CheckOptions{
+		URL:                ts.URL,
+		Method:             "POST",
+		Headers:            map[string]string{"Authorization": "Bearer secret"},
+		ExpectedBody:       `/"db"\s*:\s*"ok"/`,
+		InsecureSkipVerify: true,
+		Timeout:            2 * time.Second,
+	})
+	if !resRegex.OK {
+		t.Fatalf("expected regex body match to succeed, got %s", resRegex.Error)
+	}
+
+	// 3. Body mismatch
+	resFail := c.Check(context.Background(), CheckOptions{
+		URL:                ts.URL,
+		Method:             "POST",
+		Headers:            map[string]string{"Authorization": "Bearer secret"},
+		ExpectedBody:       `"status":"down"`,
+		InsecureSkipVerify: true,
+		Timeout:            2 * time.Second,
+	})
+	if resFail.OK || resFail.ErrorCat != CatUnexpectedBody {
+		t.Errorf("expected CatUnexpectedBody failure, got OK=%v cat=%q", resFail.OK, resFail.ErrorCat)
+	}
+}
+
+func TestHTTPChecker_ExpectedDNS_JSONPath_And_ExpiredTLS(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"database":"up","healthy":true}`))
+	}))
+	defer ts.Close()
+
+	c := NewHTTPChecker()
+
+	// 1. JSONPath match
+	resOK := c.Check(context.Background(), CheckOptions{
+		URL:      ts.URL,
+		JSONPath: "$.database == 'up'",
+		Timeout:  2 * time.Second,
+	})
+	if !resOK.OK {
+		t.Fatalf("expected JSONPath match to succeed, got error: %s", resOK.Error)
+	}
+
+	// 2. JSONPath mismatch
+	resJSONFail := c.Check(context.Background(), CheckOptions{
+		URL:      ts.URL,
+		JSONPath: "$.database == 'down'",
+		Timeout:  2 * time.Second,
+	})
+	if resJSONFail.OK || resJSONFail.ErrorCat != CatUnexpectedBody {
+		t.Errorf("expected CatUnexpectedBody for JSONPath mismatch, got OK=%v cat=%q", resJSONFail.OK, resJSONFail.ErrorCat)
+	}
+
+	// 3. ExpectedDNS mismatch (using localhost URL resolving to 127.0.0.1 / ::1)
+	resDNSFail := c.Check(context.Background(), CheckOptions{
+		URL:         "http://localhost:1",
+		ExpectedDNS: []string{"192.0.2.99"},
+		Timeout:     2 * time.Second,
+	})
+	if resDNSFail.OK || resDNSFail.ErrorCat != CatDNS {
+		t.Errorf("expected CatDNS for ExpectedDNS mismatch, got OK=%v cat=%q", resDNSFail.OK, resDNSFail.ErrorCat)
+	}
+
+	// 4. Expired TLS cert (< 24h ago) must yield TLSDaysLeft < 0 (not 0)
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("gen key: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		NotBefore:    time.Now().Add(-48 * time.Hour),
+		NotAfter:     time.Now().Add(-6 * time.Hour),
+		DNSNames:     []string{"127.0.0.1"},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	if err != nil {
+		t.Fatalf("create cert: %v", err)
+	}
+	tlsSrv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	tlsSrv.TLS = &tls.Config{
+		Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: priv}},
+	}
+	tlsSrv.StartTLS()
+	defer tlsSrv.Close()
+
+	resExpTLS := c.Check(context.Background(), CheckOptions{
+		URL:                tlsSrv.URL,
+		InsecureSkipVerify: true,
+		Timeout:            2 * time.Second,
+	})
+	if !resExpTLS.HasTLS || resExpTLS.TLSDaysLeft >= 0 {
+		t.Errorf("expected HasTLS=true and TLSDaysLeft < 0 for expired cert, got HasTLS=%v TLSDaysLeft=%d", resExpTLS.HasTLS, resExpTLS.TLSDaysLeft)
 	}
 }

@@ -2,11 +2,9 @@
    class="card card--{{.WorstStatusLower}} {{if .JustChanged}}just-changed{{end}}"
    data-system-id="{{.ID}}"
    data-name="{{.Name}}"
+   data-group="{{.Group}}"
    data-status="{{.WorstStatusLower}}"
-   href="/systems/{{.ID}}/history"
-   hx-get="/cards/{{.ID}}"
-   hx-trigger="every 15s"
-   hx-swap="outerHTML settle:200ms">
+   href="/systems/{{.ID}}/history">
 
   <div class="card__progress">
     <div class="card__progress-bar"></div>
@@ -23,7 +21,10 @@
         {{else}}SEM DADOS{{end}}
       </span>
     </div>
-    <span class="card__banner-uptime mono">1h: {{printf "%.1f%%" .DNS.Uptime1h}}</span>
+    <span class="card__banner-uptime mono">
+      {{if .InMaintenance}}<span class="maintenance-badge">MANUTENÇÃO</span>{{end}}
+      1h: {{printf "%.1f%%" .Uptime1h}}
+    </span>
   </div>
 
   <!-- System Name (Large, Bold, High-Contrast) -->
@@ -118,11 +119,28 @@
     {{end}}
   </div>
 
+  <!-- Heartbeat Bar & Latency Sparkline -->
+  <div class="card__telemetry">
+    <div class="heartbeat-bar" aria-label="Histórico recente">
+      {{range .Heartbeat}}
+        <span class="heartbeat-tick heartbeat-tick--{{.StatusLower}}" title="{{.Tooltip}}"></span>
+      {{end}}
+    </div>
+    {{if .HasSparkline}}
+      <svg class="sparkline" viewBox="0 0 60 16" preserveAspectRatio="none" aria-label="Tendência de latência">
+        <polyline points="{{.SparklinePoints}}" />
+      </svg>
+    {{end}}
+  </div>
+
   <!-- Card Footer -->
   <div class="card__footer">
     <span class="mono">
       {{if .LastCheckedTimeOnly}}Última consulta: <strong>{{.LastCheckedTimeOnly}}</strong>{{else}}Aguardando...{{end}}
     </span>
+    {{if .HasTLS}}
+      <span class="ssl-badge mono {{if .TLSExpiringSoon}}ssl-badge--warn{{end}}" title="Validade do certificado TLS">SSL: {{.TLSDaysLeft}}d</span>
+    {{end}}
     <span class="card__footer-action">Histórico →</span>
   </div>
 </a>

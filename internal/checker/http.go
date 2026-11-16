@@ -4,12 +4,15 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -60,8 +63,13 @@ func NewHTTPChecker() *HTTPChecker {
 // CheckOptions defines execution parameters for Check.
 type CheckOptions struct {
 	URL                string
+	Method             string
+	Headers            map[string]string
 	HealthPath         string
 	ExpectedStatus     []int
+	ExpectedBody       string
+	ExpectedDNS        []string
+	JSONPath           string
 	Timeout            time.Duration
 	InsecureSkipVerify bool
 }
@@ -88,16 +96,25 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 	}
 
 	host := parsedURL.Hostname()
-	// Step 1: DNS resolution check if target is a hostname (not a raw IP).
-	if net.ParseIP(host) == nil && host != "localhost" {
+	// Step 1: DNS resolution check if target is a hostname (not a raw IP) or ExpectedDNS is set.
+	if (net.ParseIP(host) == nil && host != "localhost") || len(opts.ExpectedDNS) > 0 {
 		dnsStart := time.Now()
-		_, err := net.DefaultResolver.LookupHost(ctx, host)
+		addrs, err := net.DefaultResolver.LookupHost(ctx, host)
 		if err != nil {
 			return Result{
 				OK:        false,
 				Latency:   time.Since(dnsStart),
 				ErrorCat:  CatDNS,
 				Error:     fmt.Sprintf("DNS resolution failed for %s: %v", host, err),
+				CheckedAt: now,
+			}
+		}
+		if len(opts.ExpectedDNS) > 0 && !containsAnyIP(addrs, opts.ExpectedDNS) {
+			return Result{
+				OK:        false,
+				Latency:   time.Since(dnsStart),
+				ErrorCat:  CatDNS,
+				Error:     fmt.Sprintf("DNS %s resolveu para %v (esperado %v)", host, addrs, opts.ExpectedDNS),
 				CheckedAt: now,
 			}
 		}
@@ -110,7 +127,12 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 		}
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
+	method := strings.ToUpper(strings.TrimSpace(opts.Method))
+	if method == "" {
+		method = http.MethodGet
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, targetURL, nil)
 	if err != nil {
 		return Result{
 			OK:        false,
@@ -120,6 +142,13 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 		}
 	}
 	req.Header.Set("User-Agent", "Argus/1.0 (+https://github.com/empresa/argus)")
+	for k, v := range opts.Headers {
+		if strings.EqualFold(k, "Host") {
+			req.Host = v
+		} else {
+			req.Header.Set(k, v)
+		}
+	}
 
 	client := h.client
 	if opts.InsecureSkipVerify {
@@ -140,34 +169,42 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 			CheckedAt: now,
 		}
 	}
-	defer func() {
-		// Drain and close for keep-alive
+
+	var bodyBytes []byte
+	if (opts.ExpectedBody != "" || opts.JSONPath != "") && method != http.MethodHead {
+		bodyBytes, _ = io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	} else {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-		_ = resp.Body.Close()
-	}()
+	}
+	_ = resp.Body.Close()
+
+	var hasTLS bool
+	var tlsDaysLeft int
+	if resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {
+		hasTLS = true
+		tlsDaysLeft = int(math.Floor(time.Until(resp.TLS.PeerCertificates[0].NotAfter).Hours() / 24))
+	}
 
 	statusCode := resp.StatusCode
 	isCloudflare := strings.EqualFold(resp.Header.Get("Server"), "cloudflare") ||
 		resp.Header.Get("CF-RAY") != "" ||
 		(statusCode >= 520 && statusCode <= 526)
 
-	// Mode with explicit expected status codes
+	statusOK := false
 	if len(opts.ExpectedStatus) > 0 {
-		matched := false
 		for _, code := range opts.ExpectedStatus {
 			if statusCode == code {
-				matched = true
+				statusOK = true
 				break
 			}
 		}
-		if matched {
-			return Result{
-				OK:         true,
-				StatusCode: statusCode,
-				Latency:    latency,
-				CheckedAt:  now,
-			}
-		}
+	} else if opts.HealthPath != "" {
+		statusOK = statusCode >= 200 && statusCode < 300
+	} else {
+		statusOK = statusCode < 500
+	}
+
+	if !statusOK {
 		cat := CatUnexpectedStatus
 		if isCloudflare && statusCode >= 500 {
 			cat = CatProxy
@@ -175,64 +212,124 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 			cat = CatHTTP5xx
 		}
 		return Result{
-			OK:         false,
-			StatusCode: statusCode,
-			Latency:    latency,
-			ErrorCat:   cat,
-			Error:      formatStatusError(statusCode, isCloudflare),
-			CheckedAt:  now,
+			OK:          false,
+			StatusCode:  statusCode,
+			Latency:     latency,
+			HasTLS:      hasTLS,
+			TLSDaysLeft: tlsDaysLeft,
+			ErrorCat:    cat,
+			Error:       formatStatusError(statusCode, isCloudflare),
+			CheckedAt:   now,
 		}
 	}
 
-	// Mode with health_path: requires 2xx
-	if opts.HealthPath != "" {
-		if statusCode >= 200 && statusCode < 300 {
-			return Result{
-				OK:         true,
-				StatusCode: statusCode,
-				Latency:    latency,
-				CheckedAt:  now,
-			}
-		}
-		cat := CatUnexpectedStatus
-		if isCloudflare && statusCode >= 500 {
-			cat = CatProxy
-		} else if statusCode >= 500 {
-			cat = CatHTTP5xx
-		}
+	if opts.ExpectedBody != "" && !matchExpectedBody(bodyBytes, opts.ExpectedBody) {
 		return Result{
-			OK:         false,
-			StatusCode: statusCode,
-			Latency:    latency,
-			ErrorCat:   cat,
-			Error:      formatStatusError(statusCode, isCloudflare),
-			CheckedAt:  now,
+			OK:          false,
+			StatusCode:  statusCode,
+			Latency:     latency,
+			HasTLS:      hasTLS,
+			TLSDaysLeft: tlsDaysLeft,
+			ErrorCat:    CatUnexpectedBody,
+			Error:       "corpo da resposta não corresponde ao esperado",
+			CheckedAt:   now,
 		}
 	}
 
-	// Hybrid base mode without health_path: any status < 500 is OK (server is alive)
-	if statusCode < 500 {
+	if opts.JSONPath != "" && !matchJSONPath(bodyBytes, opts.JSONPath) {
 		return Result{
-			OK:         true,
-			StatusCode: statusCode,
-			Latency:    latency,
-			CheckedAt:  now,
+			OK:          false,
+			StatusCode:  statusCode,
+			Latency:     latency,
+			HasTLS:      hasTLS,
+			TLSDaysLeft: tlsDaysLeft,
+			ErrorCat:    CatUnexpectedBody,
+			Error:       fmt.Sprintf("validação JSON (%s) falhou", opts.JSONPath),
+			CheckedAt:   now,
 		}
 	}
 
-	// 5xx on base URL: failure
-	cat := CatHTTP5xx
-	if isCloudflare {
-		cat = CatProxy
-	}
 	return Result{
-		OK:         false,
-		StatusCode: statusCode,
-		Latency:    latency,
-		ErrorCat:   cat,
-		Error:      formatStatusError(statusCode, isCloudflare),
-		CheckedAt:  now,
+		OK:          true,
+		StatusCode:  statusCode,
+		Latency:     latency,
+		HasTLS:      hasTLS,
+		TLSDaysLeft: tlsDaysLeft,
+		CheckedAt:   now,
 	}
+}
+
+func containsAnyIP(resolved, expected []string) bool {
+	for _, r := range resolved {
+		for _, e := range expected {
+			if strings.TrimSpace(r) == strings.TrimSpace(e) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func matchJSONPath(body []byte, expr string) bool {
+	var data any
+	if err := json.Unmarshal(body, &data); err != nil {
+		return false
+	}
+
+	expr = strings.TrimSpace(expr)
+	var pathPart, op, wantVal string
+	if idx := strings.Index(expr, "=="); idx > 0 {
+		pathPart = strings.TrimSpace(expr[:idx])
+		op = "=="
+		wantVal = strings.TrimSpace(expr[idx+2:])
+	} else if idx := strings.Index(expr, "!="); idx > 0 {
+		pathPart = strings.TrimSpace(expr[:idx])
+		op = "!="
+		wantVal = strings.TrimSpace(expr[idx+2:])
+	} else {
+		pathPart = expr
+	}
+
+	pathPart = strings.TrimPrefix(pathPart, "$.")
+	pathPart = strings.TrimPrefix(pathPart, "$")
+	if pathPart == "" {
+		return false
+	}
+
+	cur := data
+	for _, seg := range strings.Split(pathPart, ".") {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return false
+		}
+		val, exists := m[seg]
+		if !exists {
+			return false
+		}
+		cur = val
+	}
+
+	if op == "" {
+		return cur != nil
+	}
+
+	wantVal = strings.Trim(wantVal, `"'`)
+	gotStr := fmt.Sprintf("%v", cur)
+	if op == "==" {
+		return gotStr == wantVal
+	}
+	return gotStr != wantVal
+}
+
+func matchExpectedBody(body []byte, expected string) bool {
+	if strings.HasPrefix(expected, "/") && strings.HasSuffix(expected, "/") && len(expected) > 2 {
+		re, err := regexp.Compile(expected[1 : len(expected)-1])
+		if err != nil {
+			return false
+		}
+		return re.Match(body)
+	}
+	return strings.Contains(string(body), expected)
 }
 
 func categorizeHTTPError(ctx context.Context, err error) (string, string) {

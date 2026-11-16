@@ -216,3 +216,106 @@ func TestScheduler_ExecuteIP_HTTP(t *testing.T) {
 		t.Errorf("expected StatusUP, got %s", snap.IPCheck.Status)
 	}
 }
+
+func TestStore_Uptime1hAndHydration(t *testing.T) {
+	cfg := &config.Config{
+		Defaults: config.DefaultsConfig{
+			Interval:        10 * time.Second,
+			FailThreshold:   2,
+			DegradedLatency: 500 * time.Millisecond,
+		},
+		Systems: []config.SystemConfig{
+			{ID: "ip-only", Name: "IP Only", IP: "10.0.0.5", TCPPort: 5432},
+			{ID: "dual", Name: "Dual", URL: "https://dual.local", IP: "10.0.0.6"},
+		},
+	}
+
+	store := NewStore(cfg)
+
+	eventFired := false
+	store.SubscribeEvents(func(e ChangeEvent) {
+		eventFired = true
+	})
+
+	now := time.Now()
+	// Old check (> 1h ago) should not count toward 1h uptime
+	oldFail := checker.Result{OK: false, Error: "timeout", CheckedAt: now.Add(-2 * time.Hour)}
+	recentOK := checker.Result{OK: true, Latency: 15 * time.Millisecond, CheckedAt: now.Add(-10 * time.Minute)}
+	recentFail := checker.Result{OK: false, Error: "refused", CheckedAt: now.Add(-5 * time.Minute)}
+
+	store.HydrateCheck("ip-only", "ip", []checker.Result{oldFail, recentOK, recentFail}, now.Add(-5*time.Minute))
+	if eventFired {
+		t.Fatalf("HydrateCheck must not fire event subscribers")
+	}
+
+	snap, ok := store.GetSystem("ip-only")
+	if !ok {
+		t.Fatalf("ip-only not found")
+	}
+	if snap.Uptime1h != 50.0 {
+		t.Errorf("expected ip-only Uptime1h = 50.0, got %.2f", snap.Uptime1h)
+	}
+	if snap.IPCheck.Status != StatusDegraded {
+		t.Errorf("expected ip-only status DEGRADED (1 fail < threshold 2), got %s", snap.IPCheck.Status)
+	}
+
+	// Dual system: DNS 100%, IP 50% -> worst uptime must be 50%
+	store.HydrateCheck("dual", "dns", []checker.Result{recentOK, recentOK}, time.Time{})
+	store.HydrateCheck("dual", "ip", []checker.Result{recentOK, recentFail}, time.Time{})
+	dualSnap, _ := store.GetSystem("dual")
+	if dualSnap.Uptime1h != 50.0 {
+		t.Errorf("expected dual Uptime1h = 50.0 (worst of DNS/IP), got %.2f", dualSnap.Uptime1h)
+	}
+}
+
+func TestStore_MaintenanceAndReloadConfig(t *testing.T) {
+	cfg1 := &config.Config{
+		Defaults: config.DefaultsConfig{Interval: 10 * time.Second, FailThreshold: 1},
+		Systems: []config.SystemConfig{
+			{ID: "keep", Name: "Keep", URL: "https://keep.local"},
+			{ID: "drop", Name: "Drop", URL: "https://drop.local"},
+		},
+	}
+	store := NewStore(cfg1)
+	store.RecordDNSResult("keep", checker.Result{OK: true, Latency: 20 * time.Millisecond, CheckedAt: time.Now()})
+
+	var lastEv ChangeEvent
+	store.SubscribeEvents(func(e ChangeEvent) {
+		lastEv = e
+	})
+
+	if !store.SetMaintenance("keep", true) {
+		t.Fatalf("expected SetMaintenance(keep, true) to succeed")
+	}
+	store.RecordDNSResult("keep", checker.Result{OK: false, Error: "down", CheckedAt: time.Now()})
+	if !lastEv.InMaintenance {
+		t.Errorf("expected ChangeEvent.InMaintenance=true during maintenance")
+	}
+
+	// ReloadConfig: keep "keep" (preserving history), drop "drop", add "added"
+	cfg2 := &config.Config{
+		Defaults: config.DefaultsConfig{Interval: 10 * time.Second, FailThreshold: 1},
+		Systems: []config.SystemConfig{
+			{ID: "keep", Name: "Keep Renamed", URL: "https://keep.local", Maintenance: false},
+			{ID: "added", Name: "Added", IP: "10.0.0.99"},
+		},
+	}
+	store.ReloadConfig(cfg2)
+
+	if _, ok := store.GetSystem("drop"); ok {
+		t.Errorf("expected 'drop' to be removed after ReloadConfig")
+	}
+	if _, ok := store.GetSystem("added"); !ok {
+		t.Errorf("expected 'added' to exist after ReloadConfig")
+	}
+	keepSnap, ok := store.GetSystem("keep")
+	if !ok {
+		t.Fatalf("expected 'keep' to exist after ReloadConfig")
+	}
+	if keepSnap.Name != "Keep Renamed" || keepSnap.InMaintenance {
+		t.Errorf("expected updated name and maintenance=false, got %q maint=%v", keepSnap.Name, keepSnap.InMaintenance)
+	}
+	if !keepSnap.DNS.HasHistory {
+		t.Errorf("expected ReloadConfig to preserve in-memory history for retained system")
+	}
+}
