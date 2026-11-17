@@ -82,6 +82,22 @@ func (c *Config) applyEnvOverrides() {
 			c.Server.Addr = port
 		}
 	}
+	if lang := os.Getenv("ARGUS_LANG"); lang != "" {
+		c.Server.Lang = lang
+	} else if lang := os.Getenv("ARGUS_SERVER_LANG"); lang != "" {
+		c.Server.Lang = lang
+	}
+	if u := os.Getenv("ARGUS_SERVER_AUTH_USERNAME"); u != "" {
+		c.Server.Auth.Username = u
+	}
+	if p := os.Getenv("ARGUS_SERVER_AUTH_PASSWORD"); p != "" {
+		c.Server.Auth.Password = p
+	}
+	if tok := os.Getenv("ARGUS_SERVER_AUTH_TOKEN"); tok != "" {
+		c.Server.Auth.Token = tok
+	} else if tok := os.Getenv("ARGUS_AUTH_TOKEN"); tok != "" {
+		c.Server.Auth.Token = tok
+	}
 
 	if storagePath := os.Getenv("ARGUS_STORAGE_PATH"); storagePath != "" {
 		c.Storage.Path = storagePath

@@ -1,10 +1,15 @@
 server:
   addr: ":8080"
+  lang: "pt-BR" # "pt-BR" ou "en" (também configurável via ARGUS_LANG)
+  # auth:
+  #   username: "${ARGUS_SERVER_AUTH_USERNAME:-admin}"
+  #   password: "${ARGUS_SERVER_AUTH_PASSWORD:-}"
+  #   token: "${ARGUS_SERVER_AUTH_TOKEN:-}"
 
 storage:
   path: "./data/argus.db"
   retention_checks: 168h   # 7 dias
-  retention_events: 2160h  # 90 dias
+  retention_events: 2160h  # 90 dias (eventos e rollups horários)
 
 defaults:
   interval: 30s

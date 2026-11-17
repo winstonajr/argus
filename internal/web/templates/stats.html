@@ -1,28 +1,28 @@
 <div class="stats-bar">
   <div class="stats-grid">
-    <div class="stat-item stat-item--up">
-      <span class="stat-item__value mono">{{.UpCount}}</span>
-      <span class="stat-item__label">Operacionais</span>
+    <div class="stat-item stat-item--up" data-filter-trigger="up">
+      <span class="stat-item__value mono" id="stat-up-val">{{.UpCount}}</span>
+      <span class="stat-item__label">{{.T.StatUp}}</span>
     </div>
 
-    <div class="stat-item stat-item--degraded">
-      <span class="stat-item__value mono">{{.DegradedCount}}</span>
-      <span class="stat-item__label">Instáveis</span>
+    <div class="stat-item stat-item--degraded" data-filter-trigger="degraded">
+      <span class="stat-item__value mono" id="stat-degraded-val">{{.DegradedCount}}</span>
+      <span class="stat-item__label">{{.T.StatDegraded}}</span>
     </div>
 
-    <div class="stat-item stat-item--down">
+    <div class="stat-item stat-item--down" data-filter-trigger="down">
       <span class="stat-item__value mono" id="stat-down-val">{{.DownCount}}</span>
-      <span class="stat-item__label">Fora do ar</span>
+      <span class="stat-item__label">{{.T.StatDown}}</span>
     </div>
 
-    <div class="stat-item stat-item--total">
-      <span class="stat-item__value mono">{{.Total}}</span>
-      <span class="stat-item__label">Total Monitorado</span>
+    <div class="stat-item stat-item--total" data-filter-trigger="all">
+      <span class="stat-item__value mono" id="stat-total-val">{{.Total}}</span>
+      <span class="stat-item__label">{{.T.StatTotal}}</span>
     </div>
   </div>
 
   <div class="stats-meta">
-    <span>Último ciclo: <strong class="mono">{{.LastCheckFormatted}}</strong></span>
-    <span>Uptime Argus: <strong class="mono">{{.UptimeDurationFormatted}}</strong></span>
+    <span>{{.T.LastCycle}}: <strong class="mono">{{.LastCheckFormatted}}</strong></span>
+    <span>{{.T.ArgusUptime}}: <strong class="mono">{{.UptimeDurationFormatted}}</strong></span>
   </div>
 </div>

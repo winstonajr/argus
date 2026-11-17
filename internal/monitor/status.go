@@ -70,6 +70,7 @@ type CheckSnapshot struct {
 	ConsecFails int
 	Uptime1h    float64
 	HasHistory  bool
+	TLSWarnDays int
 }
 
 // SystemSnapshot is an immutable view of a system for templates and JSON.
@@ -82,6 +83,7 @@ type SystemSnapshot struct {
 	IP             string
 	IsIPHTTP       bool
 	TCPPort        int
+	Interval       time.Duration
 	WorstStatus    Status
 	Diagnosis      string
 	InMaintenance  bool
@@ -98,13 +100,13 @@ type SystemSnapshot struct {
 
 // StatsSnapshot provides aggregate dashboard statistics.
 type StatsSnapshot struct {
-	Total       int
-	UpCount     int
+	Total         int
+	UpCount       int
 	DegradedCount int
-	DownCount   int
-	UnknownCount int
-	WorstStatus Status
-	LastCheck   time.Time
-	UptimeStart time.Time
-	UptimeRatio float64
+	DownCount     int
+	UnknownCount  int
+	WorstStatus   Status
+	LastCheck     time.Time
+	UptimeStart   time.Time
+	UptimeRatio   float64
 }

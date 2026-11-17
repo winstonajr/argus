@@ -24,8 +24,27 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    name: Verify & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run go vet and tests
+        run: |
+          go vet ./...
+          go test -race -count=1 ./...
+
   docker:
     name: Build & Push Docker Image
+    needs: test
     runs-on: ubuntu-latest
 
     steps:

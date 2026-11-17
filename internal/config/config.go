@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"argus/internal/i18n"
 	"gopkg.in/yaml.v3"
 )
 
@@ -26,13 +27,13 @@ type Config struct {
 
 // AlertsConfig holds notification channel settings.
 type AlertsConfig struct {
-	Cooldown         time.Duration        `yaml:"cooldown"`
-	NotifyOnDegraded bool                 `yaml:"notify_on_degraded"`
-	Webhook          WebhookAlertConfig   `yaml:"webhook"`
-	Slack            SlackAlertConfig     `yaml:"slack"`
-	Discord          DiscordAlertConfig   `yaml:"discord"`
-	Telegram         TelegramAlertConfig  `yaml:"telegram"`
-	Email            EmailAlertConfig     `yaml:"email"`
+	Cooldown         time.Duration       `yaml:"cooldown"`
+	NotifyOnDegraded bool                `yaml:"notify_on_degraded"`
+	Webhook          WebhookAlertConfig  `yaml:"webhook"`
+	Slack            SlackAlertConfig    `yaml:"slack"`
+	Discord          DiscordAlertConfig  `yaml:"discord"`
+	Telegram         TelegramAlertConfig `yaml:"telegram"`
+	Email            EmailAlertConfig    `yaml:"email"`
 }
 
 type WebhookAlertConfig struct {
@@ -62,9 +63,23 @@ type EmailAlertConfig struct {
 	To       []string `yaml:"to"`
 }
 
+// AuthConfig holds optional HTTP Basic Auth and Bearer Token credentials.
+type AuthConfig struct {
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+	Token    string `yaml:"token"`
+}
+
+// Enabled returns true when authentication is configured.
+func (a AuthConfig) Enabled() bool {
+	return strings.TrimSpace(a.Password) != "" || strings.TrimSpace(a.Token) != ""
+}
+
 // ServerConfig holds HTTP server parameters.
 type ServerConfig struct {
-	Addr string `yaml:"addr"`
+	Addr string     `yaml:"addr"`
+	Lang string     `yaml:"lang"`
+	Auth AuthConfig `yaml:"auth"`
 }
 
 // StorageConfig holds SQLite storage parameters and retention settings.
@@ -108,6 +123,12 @@ type SystemConfig struct {
 	FailThreshold      int               `yaml:"fail_threshold"`
 	TLSWarnDays        int               `yaml:"tls_warn_days"`
 	InsecureSkipVerify bool              `yaml:"insecure_skip_verify"`
+	bodyRegex          *regexp.Regexp
+}
+
+// BodyRegex returns the pre-compiled regex when ExpectedBody is formatted as /pattern/.
+func (s *SystemConfig) BodyRegex() *regexp.Regexp {
+	return s.bodyRegex
 }
 
 // EffectiveInterval returns system specific interval or default.
@@ -190,6 +211,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		Server: ServerConfig{
 			Addr: ":8080",
+			Lang: i18n.LangPT,
 		},
 		Storage: StorageConfig{
 			Path:            "./data/argus.db",
@@ -216,6 +238,8 @@ func (c *Config) Validate() error {
 	if strings.TrimSpace(c.Server.Addr) == "" {
 		return errors.New("server.addr cannot be empty")
 	}
+	c.Server.Lang = i18n.Normalize(c.Server.Lang)
+	i18n.SetDefault(c.Server.Lang)
 
 	if strings.TrimSpace(c.Storage.Path) == "" {
 		return errors.New("storage.path cannot be empty")
@@ -297,9 +321,13 @@ func (c *Config) Validate() error {
 
 		if strings.HasPrefix(sys.ExpectedBody, "/") && strings.HasSuffix(sys.ExpectedBody, "/") && len(sys.ExpectedBody) > 2 {
 			pattern := sys.ExpectedBody[1 : len(sys.ExpectedBody)-1]
-			if _, err := regexp.Compile(pattern); err != nil {
+			re, err := regexp.Compile(pattern)
+			if err != nil {
 				return fmt.Errorf("system %q has invalid expected_body regex %q: %w", sys.ID, sys.ExpectedBody, err)
 			}
+			sys.bodyRegex = re
+		} else {
+			sys.bodyRegex = nil
 		}
 
 		if sys.HealthPath != "" {

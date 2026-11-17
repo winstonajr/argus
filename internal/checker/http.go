@@ -11,15 +11,18 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
+
+	"argus/internal/i18n"
 )
 
 // HTTPChecker executes DNS resolution and HTTP health verification.
 type HTTPChecker struct {
-	client *http.Client
+	client             *http.Client
 	skipInsecureClient *http.Client
 }
 
@@ -68,6 +71,7 @@ type CheckOptions struct {
 	HealthPath         string
 	ExpectedStatus     []int
 	ExpectedBody       string
+	ExpectedBodyRegex  *regexp.Regexp
 	ExpectedDNS        []string
 	JSONPath           string
 	Timeout            time.Duration
@@ -90,14 +94,13 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 		return Result{
 			OK:        false,
 			ErrorCat:  CatConnect,
-			Error:     fmt.Sprintf("invalid URL: %v", err),
+			Error:     i18n.Pickf("URL inválida: %v", "invalid URL: %v", err),
 			CheckedAt: now,
 		}
 	}
 
 	host := parsedURL.Hostname()
-	// Step 1: DNS resolution check if target is a hostname (not a raw IP) or ExpectedDNS is set.
-	if (net.ParseIP(host) == nil && host != "localhost") || len(opts.ExpectedDNS) > 0 {
+	if len(opts.ExpectedDNS) > 0 {
 		dnsStart := time.Now()
 		addrs, err := net.DefaultResolver.LookupHost(ctx, host)
 		if err != nil {
@@ -105,16 +108,16 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 				OK:        false,
 				Latency:   time.Since(dnsStart),
 				ErrorCat:  CatDNS,
-				Error:     fmt.Sprintf("DNS resolution failed for %s: %v", host, err),
+				Error:     i18n.Pickf("falha de resolução DNS para %s: %v", "DNS resolution failed for %s: %v", host, err),
 				CheckedAt: now,
 			}
 		}
-		if len(opts.ExpectedDNS) > 0 && !containsAnyIP(addrs, opts.ExpectedDNS) {
+		if !containsAnyIP(addrs, opts.ExpectedDNS) {
 			return Result{
 				OK:        false,
 				Latency:   time.Since(dnsStart),
 				ErrorCat:  CatDNS,
-				Error:     fmt.Sprintf("DNS %s resolveu para %v (esperado %v)", host, addrs, opts.ExpectedDNS),
+				Error:     i18n.Pickf("DNS %s resolveu para %v (esperado %v)", "DNS %s resolved to %v (expected %v)", host, addrs, opts.ExpectedDNS),
 				CheckedAt: now,
 			}
 		}
@@ -132,16 +135,51 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 		method = http.MethodGet
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, targetURL, nil)
+	var dnsStart, connStart, tlsStart, reqStart time.Time
+	var dnsDur, connDur, tlsDur, ttfbDur time.Duration
+	trace := &httptrace.ClientTrace{
+		DNSStart: func(httptrace.DNSStartInfo) {
+			dnsStart = time.Now()
+		},
+		DNSDone: func(httptrace.DNSDoneInfo) {
+			if !dnsStart.IsZero() {
+				dnsDur = time.Since(dnsStart)
+			}
+		},
+		ConnectStart: func(_, _ string) {
+			connStart = time.Now()
+		},
+		ConnectDone: func(_, _ string, _ error) {
+			if !connStart.IsZero() {
+				connDur = time.Since(connStart)
+			}
+		},
+		TLSHandshakeStart: func() {
+			tlsStart = time.Now()
+		},
+		TLSHandshakeDone: func(_ tls.ConnectionState, _ error) {
+			if !tlsStart.IsZero() {
+				tlsDur = time.Since(tlsStart)
+			}
+		},
+		GotFirstResponseByte: func() {
+			if !reqStart.IsZero() {
+				ttfbDur = time.Since(reqStart)
+			}
+		},
+	}
+
+	reqCtx := httptrace.WithClientTrace(ctx, trace)
+	req, err := http.NewRequestWithContext(reqCtx, method, targetURL, nil)
 	if err != nil {
 		return Result{
 			OK:        false,
 			ErrorCat:  CatConnect,
-			Error:     fmt.Sprintf("failed to create request: %v", err),
+			Error:     i18n.Pickf("falha ao criar requisição: %v", "failed to create request: %v", err),
 			CheckedAt: now,
 		}
 	}
-	req.Header.Set("User-Agent", "Argus/1.0 (+https://github.com/empresa/argus)")
+	req.Header.Set("User-Agent", "Argus/1.0 (+https://github.com/winstonajr/argus)")
 	for k, v := range opts.Headers {
 		if strings.EqualFold(k, "Host") {
 			req.Host = v
@@ -156,6 +194,7 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 	}
 
 	start := time.Now()
+	reqStart = start
 	resp, err := client.Do(req)
 	latency := time.Since(start)
 
@@ -223,7 +262,7 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 		}
 	}
 
-	if opts.ExpectedBody != "" && !matchExpectedBody(bodyBytes, opts.ExpectedBody) {
+	if opts.ExpectedBody != "" && !matchExpectedBody(bodyBytes, opts.ExpectedBody, opts.ExpectedBodyRegex) {
 		return Result{
 			OK:          false,
 			StatusCode:  statusCode,
@@ -231,7 +270,7 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 			HasTLS:      hasTLS,
 			TLSDaysLeft: tlsDaysLeft,
 			ErrorCat:    CatUnexpectedBody,
-			Error:       "corpo da resposta não corresponde ao esperado",
+			Error:       i18n.Pick("corpo da resposta não corresponde ao esperado", "response body did not match expected pattern"),
 			CheckedAt:   now,
 		}
 	}
@@ -244,18 +283,22 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 			HasTLS:      hasTLS,
 			TLSDaysLeft: tlsDaysLeft,
 			ErrorCat:    CatUnexpectedBody,
-			Error:       fmt.Sprintf("validação JSON (%s) falhou", opts.JSONPath),
+			Error:       i18n.Pickf("validação JSON (%s) falhou", "JSON validation (%s) failed", opts.JSONPath),
 			CheckedAt:   now,
 		}
 	}
 
 	return Result{
-		OK:          true,
-		StatusCode:  statusCode,
-		Latency:     latency,
-		HasTLS:      hasTLS,
-		TLSDaysLeft: tlsDaysLeft,
-		CheckedAt:   now,
+		OK:             true,
+		StatusCode:     statusCode,
+		Latency:        latency,
+		DNSLatency:     dnsDur,
+		ConnectLatency: connDur,
+		TLSLatency:     tlsDur,
+		TTFBLatency:    ttfbDur,
+		HasTLS:         hasTLS,
+		TLSDaysLeft:    tlsDaysLeft,
+		CheckedAt:      now,
 	}
 }
 
@@ -321,7 +364,10 @@ func matchJSONPath(body []byte, expr string) bool {
 	return gotStr != wantVal
 }
 
-func matchExpectedBody(body []byte, expected string) bool {
+func matchExpectedBody(body []byte, expected string, precompiled *regexp.Regexp) bool {
+	if precompiled != nil {
+		return precompiled.Match(body)
+	}
 	if strings.HasPrefix(expected, "/") && strings.HasSuffix(expected, "/") && len(expected) > 2 {
 		re, err := regexp.Compile(expected[1 : len(expected)-1])
 		if err != nil {
@@ -333,13 +379,18 @@ func matchExpectedBody(body []byte, expected string) bool {
 }
 
 func categorizeHTTPError(ctx context.Context, err error) (string, string) {
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) || strings.Contains(err.Error(), "no such host") || strings.Contains(err.Error(), "lookup ") {
+		return CatDNS, i18n.Pick("falha de resolução de nome (DNS)", "DNS name resolution failed")
+	}
+
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return CatTimeout, "tempo limite da requisição HTTP excedido"
+		return CatTimeout, i18n.Pick("tempo limite da requisição HTTP excedido", "HTTP request timed out")
 	}
 
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
-		return CatTimeout, "timeout de conexão com o servidor"
+		return CatTimeout, i18n.Pick("timeout de conexão com o servidor", "server connection timed out")
 	}
 
 	var certErr x509.UnknownAuthorityError
@@ -347,35 +398,31 @@ func categorizeHTTPError(ctx context.Context, err error) (string, string) {
 	var certInvalidErr x509.CertificateInvalidError
 	if errors.As(err, &certErr) || errors.As(err, &hostErr) || errors.As(err, &certInvalidErr) ||
 		strings.Contains(err.Error(), "certificate") || strings.Contains(err.Error(), "tls:") {
-		return CatTLS, fmt.Sprintf("erro de certificado TLS: %v", err)
+		return CatTLS, i18n.Pickf("erro de certificado TLS: %v", "TLS certificate error: %v", err)
 	}
 
 	if strings.Contains(err.Error(), "connection refused") {
-		return CatConnect, "conexão recusada pelo host"
+		return CatConnect, i18n.Pick("conexão recusada pelo host", "connection refused by host")
 	}
 
-	if strings.Contains(err.Error(), "no such host") {
-		return CatDNS, "falha de resolução de nome (DNS)"
-	}
-
-	return CatConnect, fmt.Sprintf("falha de conexão: %v", err)
+	return CatConnect, i18n.Pickf("falha de conexão: %v", "connection failed: %v", err)
 }
 
 func formatStatusError(statusCode int, isCloudflare bool) string {
 	if isCloudflare {
 		switch statusCode {
 		case 502:
-			return "Cloudflare 502 — Bad Gateway (origem não respondeu)"
+			return i18n.Pick("Cloudflare 502 — Bad Gateway (origem não respondeu)", "Cloudflare 502 — Bad Gateway (origin did not respond)")
 		case 503:
 			return "Cloudflare 503 — Service Temporarily Unavailable"
 		case 504:
-			return "Cloudflare 504 — Gateway Timeout (timeout na origem)"
+			return i18n.Pick("Cloudflare 504 — Gateway Timeout (timeout na origem)", "Cloudflare 504 — Gateway Timeout (origin timed out)")
 		case 520:
 			return "Cloudflare 520 — Web Server Returned an Unknown Error"
 		case 521:
-			return "Cloudflare 521 — Web Server Is Down (servidor desligado)"
+			return i18n.Pick("Cloudflare 521 — Web Server Is Down (servidor desligado)", "Cloudflare 521 — Web Server Is Down")
 		case 522:
-			return "Cloudflare 522 — Connection Timed Out (timeout de conexão)"
+			return i18n.Pick("Cloudflare 522 — Connection Timed Out (timeout de conexão)", "Cloudflare 522 — Connection Timed Out")
 		case 523:
 			return "Cloudflare 523 — Origin Is Unreachable"
 		case 524:
@@ -385,7 +432,7 @@ func formatStatusError(statusCode int, isCloudflare bool) string {
 		case 526:
 			return "Cloudflare 526 — Invalid SSL Certificate"
 		default:
-			return fmt.Sprintf("Cloudflare %d — erro de borda", statusCode)
+			return i18n.Pickf("Cloudflare %d — erro de borda", "Cloudflare %d — edge error", statusCode)
 		}
 	}
 
@@ -399,6 +446,6 @@ func formatStatusError(statusCode int, isCloudflare bool) string {
 	case 504:
 		return "HTTP 504 — Gateway Timeout"
 	default:
-		return fmt.Sprintf("HTTP %d inesperado", statusCode)
+		return i18n.Pickf("HTTP %d inesperado", "unexpected HTTP %d", statusCode)
 	}
 }

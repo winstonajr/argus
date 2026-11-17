@@ -49,20 +49,23 @@ func (s *Scheduler) Start(parentCtx context.Context) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	for _, sys := range s.cfg.Systems {
+		sys := sys
 		interval := sys.EffectiveInterval(s.cfg.Defaults)
 
-		// Schedule DNS/HTTP check if URL is present
 		if strings.TrimSpace(sys.URL) != "" {
 			jitter := time.Duration(r.Int63n(int64(interval / 3)))
 			s.wg.Add(1)
-			go s.runDNSLoop(ctx, sys, jitter, interval)
+			go s.runLoop(ctx, jitter, interval, func(c context.Context) {
+				s.executeDNS(c, sys)
+			})
 		}
 
-		// Schedule IP check if IP is present
 		if strings.TrimSpace(sys.IP) != "" {
 			jitter := time.Duration(r.Int63n(int64(interval / 3)))
 			s.wg.Add(1)
-			go s.runIPLoop(ctx, sys, jitter, interval)
+			go s.runLoop(ctx, jitter, interval, func(c context.Context) {
+				s.executeIP(c, sys)
+			})
 		}
 	}
 }
@@ -126,18 +129,16 @@ func (s *Scheduler) CheckNow(sysID string) bool {
 	return true
 }
 
-func (s *Scheduler) runDNSLoop(ctx context.Context, sys config.SystemConfig, jitter, interval time.Duration) {
+func (s *Scheduler) runLoop(ctx context.Context, jitter, interval time.Duration, fn func(context.Context)) {
 	defer s.wg.Done()
 
-	// Initial jitter sleep
 	select {
 	case <-ctx.Done():
 		return
 	case <-time.After(jitter):
 	}
 
-	// First execution
-	s.executeDNS(ctx, sys)
+	fn(ctx)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -147,69 +148,35 @@ func (s *Scheduler) runDNSLoop(ctx context.Context, sys config.SystemConfig, jit
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.executeDNS(ctx, sys)
+			fn(ctx)
 		}
 	}
 }
 
-func (s *Scheduler) executeDNS(ctx context.Context, sys config.SystemConfig) {
-	opts := checker.CheckOptions{
-		URL:                sys.URL,
+func (s *Scheduler) httpOptions(sys config.SystemConfig, targetURL string, expectedDNS []string) checker.CheckOptions {
+	return checker.CheckOptions{
+		URL:                targetURL,
 		Method:             sys.Method,
 		Headers:            sys.Headers,
 		HealthPath:         sys.HealthPath,
 		ExpectedStatus:     sys.ExpectedStatus,
 		ExpectedBody:       sys.ExpectedBody,
-		ExpectedDNS:        sys.ExpectedDNS,
+		ExpectedBodyRegex:  sys.BodyRegex(),
+		ExpectedDNS:        expectedDNS,
 		JSONPath:           sys.JSONPath,
 		Timeout:            sys.EffectiveHTTPTimeout(s.cfg.Defaults),
 		InsecureSkipVerify: sys.InsecureSkipVerify,
 	}
-
-	res := s.httpChecker.Check(ctx, opts)
-	s.store.RecordDNSResult(sys.ID, res)
 }
 
-func (s *Scheduler) runIPLoop(ctx context.Context, sys config.SystemConfig, jitter, interval time.Duration) {
-	defer s.wg.Done()
-
-	// Initial jitter sleep
-	select {
-	case <-ctx.Done():
-		return
-	case <-time.After(jitter):
-	}
-
-	// First execution
-	s.executeIP(ctx, sys)
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.executeIP(ctx, sys)
-		}
-	}
+func (s *Scheduler) executeDNS(ctx context.Context, sys config.SystemConfig) {
+	res := s.httpChecker.Check(ctx, s.httpOptions(sys, sys.URL, sys.ExpectedDNS))
+	s.store.RecordDNSResult(sys.ID, res)
 }
 
 func (s *Scheduler) executeIP(ctx context.Context, sys config.SystemConfig) {
 	if sys.IsIPHTTP() {
-		opts := checker.CheckOptions{
-			URL:                sys.IP,
-			Method:             sys.Method,
-			Headers:            sys.Headers,
-			HealthPath:         sys.HealthPath,
-			ExpectedStatus:     sys.ExpectedStatus,
-			ExpectedBody:       sys.ExpectedBody,
-			JSONPath:           sys.JSONPath,
-			Timeout:            sys.EffectiveHTTPTimeout(s.cfg.Defaults),
-			InsecureSkipVerify: sys.InsecureSkipVerify,
-		}
-		res := s.httpChecker.Check(ctx, opts)
+		res := s.httpChecker.Check(ctx, s.httpOptions(sys, sys.IP, nil))
 		s.store.RecordIPResult(sys.ID, res)
 		return
 	}

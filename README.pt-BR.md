@@ -72,6 +72,10 @@ A precedência de configuração segue: **Variáveis de Ambiente > Arquivo YAML 
 | Variável | Padrão | Descrição |
 |---|---|---|
 | `ARGUS_SERVER_ADDR` | `:8080` | Endereço e porta HTTP (ou `PORT=8080`) |
+| `ARGUS_LANG` | `pt-BR` | Idioma da interface, diagnóstico e alertas (`pt-BR` ou `en`) |
+| `ARGUS_SERVER_AUTH_USERNAME` | `admin` | Usuário Basic Auth (ativo quando senha é definida) |
+| `ARGUS_SERVER_AUTH_PASSWORD` | — | Senha Basic Auth (protege UI/API; `/status`, `/healthz` e `/metrics` permanecem públicos) |
+| `ARGUS_SERVER_AUTH_TOKEN` | — | Token Bearer / `X-Argus-Token` para API |
 | `ARGUS_CONFIG_PATH` | `./config.yaml` | Caminho do arquivo de configuração YAML |
 | `ARGUS_STORAGE_PATH` | `./data/argus.db` | Caminho do banco SQLite |
 | `ARGUS_STORAGE_RETENTION_CHECKS` | `168h` | Retenção de logs de checagens |

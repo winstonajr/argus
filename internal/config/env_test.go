@@ -188,3 +188,38 @@ systems:
 		t.Errorf("unexpected email recipients: %+v", cfg.Alerts.Email.To)
 	}
 }
+
+func TestEnv_LangAndAuthOverrides(t *testing.T) {
+	_ = os.Setenv("ARGUS_LANG", "en")
+	_ = os.Setenv("ARGUS_SERVER_AUTH_USERNAME", "ops")
+	_ = os.Setenv("ARGUS_SERVER_AUTH_PASSWORD", "pass123")
+	_ = os.Setenv("ARGUS_SERVER_AUTH_TOKEN", "tok123")
+	defer func() {
+		_ = os.Unsetenv("ARGUS_LANG")
+		_ = os.Unsetenv("ARGUS_SERVER_AUTH_USERNAME")
+		_ = os.Unsetenv("ARGUS_SERVER_AUTH_PASSWORD")
+		_ = os.Unsetenv("ARGUS_SERVER_AUTH_TOKEN")
+	}()
+
+	yamlContent := `
+systems:
+  - id: s1
+    url: "https://example.com"
+`
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Server.Lang != "en" {
+		t.Errorf("expected Server.Lang 'en', got %q", cfg.Server.Lang)
+	}
+	if !cfg.Server.Auth.Enabled() || cfg.Server.Auth.Username != "ops" || cfg.Server.Auth.Password != "pass123" || cfg.Server.Auth.Token != "tok123" {
+		t.Errorf("unexpected Server.Auth: %+v", cfg.Server.Auth)
+	}
+}
