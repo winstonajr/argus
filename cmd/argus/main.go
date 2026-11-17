@@ -53,22 +53,22 @@ func main() {
 	}
 	log.Printf("[INFO] Banco SQLite pronto em %s", cfg.Storage.Path)
 
-	// Initialize In-Memory Store
 	store := monitor.NewStore(cfg)
 
-	// Hydrate initial state from SQLite history
 	hydrateCtx, hydrateCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	checksByKey, _ := db.GetRecentChecksBatch(hydrateCtx, 362)
+	eventsByKey, _ := db.GetLatestEventTimesBatch(hydrateCtx)
 	for _, sys := range cfg.Systems {
 		if strings.TrimSpace(sys.URL) != "" {
-			if checks, err := db.GetRecentChecks(hydrateCtx, sys.ID, "dns", 120); err == nil && len(checks) > 0 {
-				lastEv, _ := db.GetLatestEventTime(hydrateCtx, sys.ID, "dns")
-				store.HydrateCheck(sys.ID, "dns", checks, lastEv)
+			key := sys.ID + ":dns"
+			if checks := checksByKey[key]; len(checks) > 0 {
+				store.HydrateCheck(sys.ID, "dns", checks, eventsByKey[key])
 			}
 		}
 		if strings.TrimSpace(sys.IP) != "" {
-			if checks, err := db.GetRecentChecks(hydrateCtx, sys.ID, "ip", 120); err == nil && len(checks) > 0 {
-				lastEv, _ := db.GetLatestEventTime(hydrateCtx, sys.ID, "ip")
-				store.HydrateCheck(sys.ID, "ip", checks, lastEv)
+			key := sys.ID + ":ip"
+			if checks := checksByKey[key]; len(checks) > 0 {
+				store.HydrateCheck(sys.ID, "ip", checks, eventsByKey[key])
 			}
 		}
 	}

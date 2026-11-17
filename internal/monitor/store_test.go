@@ -389,3 +389,36 @@ func TestStore_DiagnosisCustomTLSWarnDays(t *testing.T) {
 		t.Errorf("expected TLS expiry diagnosis, got %q", snap.Diagnosis)
 	}
 }
+
+func TestStore_RingBufferCoversFullHourAt10s(t *testing.T) {
+	cfg := &config.Config{
+		Defaults: config.DefaultsConfig{
+			Interval:      10 * time.Second,
+			FailThreshold: 2,
+		},
+		Systems: []config.SystemConfig{
+			{ID: "fast", Name: "Fast System", URL: "https://fast.local"},
+		},
+	}
+
+	store := NewStore(cfg)
+	now := time.Now()
+	// First check 59 minutes ago fails, followed by 359 OK checks every 10s
+	store.RecordDNSResult("fast", checker.Result{
+		OK:        false,
+		Error:     "fail at start of hour",
+		CheckedAt: now.Add(-59 * time.Minute),
+	})
+	for i := 1; i < 360; i++ {
+		store.RecordDNSResult("fast", checker.Result{
+			OK:        true,
+			Latency:   10 * time.Millisecond,
+			CheckedAt: now.Add(-59*time.Minute + time.Duration(i)*10*time.Second),
+		})
+	}
+
+	snap, _ := store.GetSystem("fast")
+	if snap.Uptime1h >= 100.0 || snap.Uptime1h < 99.5 {
+		t.Errorf("expected Uptime1h around 99.72%% (359/360 retained in ring buffer), got %.4f%%", snap.Uptime1h)
+	}
+}

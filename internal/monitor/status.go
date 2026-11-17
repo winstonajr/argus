@@ -83,6 +83,7 @@ type SystemSnapshot struct {
 	IP             string
 	IsIPHTTP       bool
 	TCPPort        int
+	Interval       time.Duration
 	WorstStatus    Status
 	Diagnosis      string
 	InMaintenance  bool

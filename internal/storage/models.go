@@ -29,12 +29,24 @@ type StoredEvent struct {
 	Duration   time.Duration `json:"duration,omitempty"` // computed if recovered
 }
 
-// TimelineBucket represents aggregated status for an interval in the timeline bar.
+// TimelineBucket represents aggregated status and latency for an interval in the timeline bar.
 type TimelineBucket struct {
-	StartTime time.Time `json:"start_time"`
-	EndTime   time.Time `json:"end_time"`
-	DNSStatus string    `json:"dns_status"` // "UP", "DEGRADED", "DOWN", "UNKNOWN"
-	IPStatus  string    `json:"ip_status"`
+	StartTime    time.Time `json:"start_time"`
+	EndTime      time.Time `json:"end_time"`
+	DNSStatus    string    `json:"dns_status"` // "UP", "DEGRADED", "DOWN", "UNKNOWN"
+	IPStatus     string    `json:"ip_status"`
+	AvgLatencyMs int64     `json:"avg_latency_ms"`
+	MaxLatencyMs int64     `json:"max_latency_ms"`
+	TotalChecks  int       `json:"total_checks"`
+	OKChecks     int       `json:"ok_checks"`
+	HasData      bool      `json:"has_data"`
+}
+
+// DailyUptimeBucket represents one day of aggregated availability for the public status page.
+type DailyUptimeBucket struct {
+	Day       time.Time `json:"day"`
+	Status    string    `json:"status"` // "UP", "DEGRADED", "DOWN", "UNKNOWN"
+	UptimePct float64   `json:"uptime_pct"`
 	HasData   bool      `json:"has_data"`
 }
 

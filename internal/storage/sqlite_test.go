@@ -2,6 +2,8 @@ package storage
 
 import (
 	"context"
+	"database/sql"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -212,5 +214,98 @@ func TestStorage_ListEventsInterleavedKindsMTTR(t *testing.T) {
 	}
 	if ipDur != 6*time.Minute {
 		t.Errorf("expected IP recovery duration 6m, got %v", ipDur)
+	}
+}
+
+func TestStorage_MigrationV1ToV2AndHourlyRollups(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "legacy_v1.db")
+
+	rawDB, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open raw sqlite: %v", err)
+	}
+	_, err = rawDB.Exec(`
+CREATE TABLE checks (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  system_id   TEXT    NOT NULL,
+  kind        TEXT    NOT NULL,
+  ok          INTEGER NOT NULL,
+  status_code INTEGER,
+  latency_ms  INTEGER,
+  loss_pct    REAL,
+  error_cat   TEXT,
+  error_msg   TEXT,
+  checked_at  DATETIME NOT NULL
+);
+CREATE TABLE events (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  system_id   TEXT    NOT NULL,
+  kind        TEXT    NOT NULL,
+  from_status TEXT    NOT NULL,
+  to_status   TEXT    NOT NULL,
+  diagnosis   TEXT,
+  detail      TEXT,
+  occurred_at DATETIME NOT NULL
+);
+CREATE TABLE maintenance_overrides (
+  system_id  TEXT PRIMARY KEY,
+  enabled    INTEGER NOT NULL,
+  updated_at DATETIME NOT NULL
+);
+`)
+	if err != nil {
+		t.Fatalf("create legacy schema: %v", err)
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	legacyCheckTime := now.Add(-15 * 24 * time.Hour).String()
+	_, err = rawDB.Exec(
+		`INSERT INTO checks (system_id, kind, ok, status_code, latency_ms, loss_pct, checked_at) VALUES ('erp', 'dns', 1, 200, 40, 0, ?), ('erp', 'dns', 0, 502, 120, 0, ?)`,
+		legacyCheckTime, legacyCheckTime,
+	)
+	if err != nil {
+		t.Fatalf("insert legacy checks: %v", err)
+	}
+	_ = rawDB.Close()
+
+	// Re-open with storage.Open -> should create .bak, migrate to v2, and backfill checks_hourly
+	db, err := Open(dbPath, 7*24*time.Hour, 90*24*time.Hour)
+	if err != nil {
+		t.Fatalf("Open migrated db: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := os.Stat(dbPath + ".bak"); err != nil {
+		t.Errorf("expected backup file %s.bak to be created: %v", dbPath, err)
+	}
+
+	// Purge raw checks older than 7d; 15d-old data must remain in checks_hourly for 30d queries!
+	if err := db.PurgeOldRecords(); err != nil {
+		t.Fatalf("PurgeOldRecords: %v", err)
+	}
+
+	ctx := context.Background()
+	stats, err := db.GetSystemUptimeStats(ctx, "erp", now.Add(-30*24*time.Hour), now)
+	if err != nil {
+		t.Fatalf("GetSystemUptimeStats(30d): %v", err)
+	}
+	if stats.DNSUptime != 50.0 {
+		t.Errorf("expected 30d DNSUptime from hourly rollup to be 50.0%% after raw check purge, got %.2f%%", stats.DNSUptime)
+	}
+
+	buckets, err := db.GetTimelineBucketsWithLatency(ctx, "erp", now.Add(-30*24*time.Hour), now, 90, 2000)
+	if err != nil {
+		t.Fatalf("GetTimelineBucketsWithLatency(30d): %v", err)
+	}
+	hasDataBucket := false
+	for _, b := range buckets {
+		if b.HasData && b.DNSStatus == "DOWN" {
+			hasDataBucket = true
+			break
+		}
+	}
+	if !hasDataBucket {
+		t.Errorf("expected at least one 30d timeline bucket with HasData=true and DNSStatus=DOWN from rollup")
 	}
 }
