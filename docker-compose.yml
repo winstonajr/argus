@@ -13,7 +13,12 @@ services:
     environment:
       - ARGUS_CONFIG_PATH=/app/config.yaml
       - ARGUS_STORAGE_PATH=/app/data/argus.db
-      # Opcional: configure alertas direto via env (sem precisar editar o YAML)
+      - ARGUS_LANG=${ARGUS_LANG:-pt-BR} # "pt-BR" or "en"
+      # Optional authentication (protects dashboard & API while keeping /status, /healthz, /metrics public)
+      # - ARGUS_SERVER_AUTH_USERNAME=admin
+      # - ARGUS_SERVER_AUTH_PASSWORD=secret
+      # - ARGUS_SERVER_AUTH_TOKEN=my-api-token
+      # Optional: configure alerts directly via env
       # - ARGUS_DEFAULTS_TLS_WARN_DAYS=15
       # - ARGUS_ALERTS_COOLDOWN=5m
       # - ARGUS_ALERTS_NOTIFY_ON_DEGRADED=false

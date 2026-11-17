@@ -601,3 +601,63 @@ func TestServer_StaticCacheGzipCSRFAndI18n(t *testing.T) {
 		t.Errorf("GET /api/systems/erp/failed-checks failed: %d %s", rrFailed.Code, rrFailed.Body.String())
 	}
 }
+
+func TestServer_AuthMiddlewareAndExpiringMaintenance(t *testing.T) {
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			Addr: ":8080",
+			Auth: config.AuthConfig{
+				Username: "noc",
+				Password: "secret-password",
+				Token:    "api-secret-token",
+			},
+		},
+		Defaults: config.DefaultsConfig{Interval: 10 * time.Second, FailThreshold: 2, DegradedLatency: 2 * time.Second},
+		Systems: []config.SystemConfig{
+			{ID: "erp", Name: "ERP", URL: "https://erp.local"},
+		},
+	}
+	store := monitor.NewStore(cfg)
+	server, err := NewServer(cfg, store, nil)
+	if err != nil {
+		t.Fatalf("NewServer failed: %v", err)
+	}
+
+	// 1. Public routes remain accessible without credentials
+	for _, pubPath := range []string{"/status", "/healthz", "/metrics", "/favicon.ico", "/static/css/tokens.css"} {
+		req := httptest.NewRequest(http.MethodGet, pubPath, nil)
+		rr := httptest.NewRecorder()
+		server.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected public route %s to return 200 without auth, got %d", pubPath, rr.Code)
+		}
+	}
+
+	// 2. Protected routes return 401 without credentials
+	for _, protPath := range []string{"/", "/api/systems", "/systems/erp/history"} {
+		req := httptest.NewRequest(http.MethodGet, protPath, nil)
+		rr := httptest.NewRecorder()
+		server.ServeHTTP(rr, req)
+		if rr.Code != http.StatusUnauthorized {
+			t.Errorf("expected protected route %s to return 401 without auth, got %d", protPath, rr.Code)
+		}
+	}
+
+	// 3. Basic Auth grants access
+	reqBasic := httptest.NewRequest(http.MethodGet, "/", nil)
+	reqBasic.SetBasicAuth("noc", "secret-password")
+	rrBasic := httptest.NewRecorder()
+	server.ServeHTTP(rrBasic, reqBasic)
+	if rrBasic.Code != http.StatusOK {
+		t.Errorf("expected 200 with valid Basic Auth, got %d", rrBasic.Code)
+	}
+
+	// 4. Bearer token grants access & maintenance with duration works
+	reqMaint := httptest.NewRequest(http.MethodPost, "/api/systems/erp/maintenance?enabled=true&duration=1h", nil)
+	reqMaint.Header.Set("Authorization", "Bearer api-secret-token")
+	rrMaint := httptest.NewRecorder()
+	server.ServeHTTP(rrMaint, reqMaint)
+	if rrMaint.Code != http.StatusOK || !strings.Contains(rrMaint.Body.String(), `"until"`) {
+		t.Errorf("expected 200 with until timestamp on maintenance POST, got %d %s", rrMaint.Code, rrMaint.Body.String())
+	}
+}

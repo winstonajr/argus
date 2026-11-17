@@ -160,6 +160,21 @@ func (s *Server) handleTestAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	const alertTestCooldown = 3 * time.Second
+	now := time.Now()
+	s.manualCheckMu.Lock()
+	if !s.lastAlertTest.IsZero() && now.Sub(s.lastAlertTest) < alertTestCooldown {
+		s.manualCheckMu.Unlock()
+		w.WriteHeader(http.StatusTooManyRequests)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":    false,
+			"error": "rate limit exceeded",
+		})
+		return
+	}
+	s.lastAlertTest = now
+	s.manualCheckMu.Unlock()
+
 	sent, err := n.SendTest(r.Context())
 	if err != nil {
 		status := http.StatusBadGateway

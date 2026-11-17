@@ -1,11 +1,13 @@
 package web
 
 import (
+	"crypto/subtle"
 	"embed"
 	"fmt"
 	"html/template"
 	"net/http"
 	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,6 +48,7 @@ type Server struct {
 	notifier        *notify.Notifier
 	manualCheckMu   sync.Mutex
 	lastManualCheck map[string]time.Time
+	lastAlertTest   time.Time
 }
 
 // NewServer initializes the HTTP routing, static asset cache, and embedded templates.
@@ -80,7 +83,7 @@ func NewServer(cfg *config.Config, store *monitor.Store, db *storage.DB) (*Serve
 	s.routes()
 
 	cop := http.NewCrossOriginProtection()
-	s.handler = s.withSecurityHeaders(cop.Handler(s.mux))
+	s.handler = s.withSecurityHeaders(s.withAuth(cop.Handler(s.mux)))
 
 	if store != nil {
 		store.SubscribeChecks(func(sysID string, kind string, res checker.Result) {
@@ -162,6 +165,71 @@ func (s *Server) withSecurityHeaders(next http.Handler) http.Handler {
 		h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'")
 		next.ServeHTTP(w, r)
 	})
+}
+
+func isPublicRoute(urlPath string) bool {
+	return urlPath == "/status" ||
+		urlPath == "/healthz" ||
+		urlPath == "/metrics" ||
+		urlPath == "/favicon.ico" ||
+		strings.HasPrefix(urlPath, "/static/")
+}
+
+func (s *Server) withAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.cfgMu.RLock()
+		var auth config.AuthConfig
+		if s.cfg != nil {
+			auth = s.cfg.Server.Auth
+		}
+		s.cfgMu.RUnlock()
+
+		if !auth.Enabled() || isPublicRoute(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if s.checkCredentials(r, auth) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		w.Header().Set("WWW-Authenticate", `Basic realm="Argus NOC"`)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	})
+}
+
+func (s *Server) checkCredentials(r *http.Request, auth config.AuthConfig) bool {
+	if tok := strings.TrimSpace(auth.Token); tok != "" {
+		if headerTok := strings.TrimSpace(r.Header.Get("X-Argus-Token")); headerTok != "" {
+			if subtle.ConstantTimeCompare([]byte(headerTok), []byte(tok)) == 1 {
+				return true
+			}
+		}
+		if authz := r.Header.Get("Authorization"); strings.HasPrefix(authz, "Bearer ") {
+			bearer := strings.TrimSpace(strings.TrimPrefix(authz, "Bearer "))
+			if subtle.ConstantTimeCompare([]byte(bearer), []byte(tok)) == 1 {
+				return true
+			}
+		}
+	}
+
+	if pass := strings.TrimSpace(auth.Password); pass != "" {
+		wantUser := strings.TrimSpace(auth.Username)
+		if wantUser == "" {
+			wantUser = "admin"
+		}
+		gotUser, gotPass, ok := r.BasicAuth()
+		if ok {
+			userMatch := subtle.ConstantTimeCompare([]byte(gotUser), []byte(wantUser)) == 1
+			passMatch := subtle.ConstantTimeCompare([]byte(gotPass), []byte(pass)) == 1
+			if userMatch && passMatch {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func (s *Server) defaultMessages() i18n.Messages {

@@ -63,10 +63,23 @@ type EmailAlertConfig struct {
 	To       []string `yaml:"to"`
 }
 
+// AuthConfig holds optional HTTP Basic Auth and Bearer Token credentials.
+type AuthConfig struct {
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+	Token    string `yaml:"token"`
+}
+
+// Enabled returns true when authentication is configured.
+func (a AuthConfig) Enabled() bool {
+	return strings.TrimSpace(a.Password) != "" || strings.TrimSpace(a.Token) != ""
+}
+
 // ServerConfig holds HTTP server parameters.
 type ServerConfig struct {
-	Addr string `yaml:"addr"`
-	Lang string `yaml:"lang"`
+	Addr string     `yaml:"addr"`
+	Lang string     `yaml:"lang"`
+	Auth AuthConfig `yaml:"auth"`
 }
 
 // StorageConfig holds SQLite storage parameters and retention settings.

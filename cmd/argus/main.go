@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -20,7 +20,17 @@ import (
 	"argus/internal/web"
 )
 
+var version = "dev"
+
+func initLogger() {
+	if strings.EqualFold(os.Getenv("ARGUS_LOG_FORMAT"), "json") {
+		slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+	}
+}
+
 func main() {
+	initLogger()
+
 	configPathFlag := flag.String("config", "config.yaml", "Caminho para o arquivo de configuração YAML")
 	flag.Parse()
 
@@ -36,22 +46,23 @@ func main() {
 	if _, err := os.Stat(configPath); os.IsNotExist(err) && configPath == "config.yaml" {
 		if _, errEx := os.Stat("config.example.yaml"); errEx == nil {
 			configPath = "config.example.yaml"
-			log.Printf("[INFO] config.yaml não encontrado; usando config.example.yaml de demonstração")
+			slog.Info("config.yaml não encontrado; usando config.example.yaml de demonstração")
 		}
 	}
 
-	log.Printf("[INFO] Argus iniciando com configuração: %s", configPath)
+	slog.Info("Argus iniciando", "version", version, "config", configPath)
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		log.Fatalf("[FATAL] Erro ao carregar configuração: %v", err)
+		slog.Error("erro ao carregar configuração", "err", err)
+		os.Exit(1)
 	}
 
-	// Initialize SQLite Database
 	db, err := storage.Open(cfg.Storage.Path, cfg.Storage.RetentionChecks, cfg.Storage.RetentionEvents)
 	if err != nil {
-		log.Fatalf("[FATAL] Erro ao inicializar banco SQLite: %v", err)
+		slog.Error("erro ao inicializar banco SQLite", "err", err)
+		os.Exit(1)
 	}
-	log.Printf("[INFO] Banco SQLite pronto em %s", cfg.Storage.Path)
+	slog.Info("banco SQLite pronto", "path", cfg.Storage.Path)
 
 	store := monitor.NewStore(cfg)
 
@@ -79,23 +90,27 @@ func main() {
 	}
 	hydrateCancel()
 
-	// Pipe check results and state transitions into SQLite
 	store.SubscribeChecks(func(sysID string, kind string, res checker.Result) {
 		db.AsyncSaveCheck(sysID, kind, res)
 	})
 	notifier := notify.New(cfg.Alerts)
 	if notifier.Enabled() {
-		log.Printf("[INFO] Central de notificações ativada (cooldown: %v)", cfg.Alerts.Cooldown)
+		slog.Info("central de notificações ativada", "cooldown", cfg.Alerts.Cooldown)
 	}
 
 	store.SubscribeEvents(func(e monitor.ChangeEvent) {
 		db.AsyncSaveEvent(e)
 		notifier.HandleEvent(e)
-		log.Printf("[EVENT] %s (%s) mudou de %s para %s — Diagnóstico: %s (%s)",
-			e.SystemName, e.Kind, e.FromStatus, e.ToStatus, e.Diagnosis, e.Detail)
+		slog.Info("mudança de estado",
+			"system", e.SystemName,
+			"kind", e.Kind,
+			"from", e.FromStatus,
+			"to", e.ToStatus,
+			"diagnosis", e.Diagnosis,
+			"detail", e.Detail,
+		)
 	})
 
-	// Initialize Checkers & Scheduler
 	httpChecker := checker.NewHTTPChecker()
 	pingChecker := checker.NewPingChecker()
 
@@ -104,12 +119,12 @@ func main() {
 	defer rootCancel()
 
 	scheduler.Start(rootCtx)
-	log.Printf("[INFO] Scheduler de monitoramento iniciado para %d sistemas", len(cfg.Systems))
+	slog.Info("scheduler de monitoramento iniciado", "systems", len(cfg.Systems))
 
-	// Initialize Web Server
 	webServer, err := web.NewServer(cfg, store, db)
 	if err != nil {
-		log.Fatalf("[FATAL] Erro ao inicializar servidor web: %v", err)
+		slog.Error("erro ao inicializar servidor web", "err", err)
+		os.Exit(1)
 	}
 	webServer.SetCheckTrigger(scheduler.CheckNow)
 	webServer.SetNotifier(notifier)
@@ -121,16 +136,14 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	// Server runner
 	serverErrCh := make(chan error, 1)
 	go func() {
-		log.Printf("[INFO] Argus ouvindo em http://localhost%s (ou %s)", cfg.Server.Addr, cfg.Server.Addr)
+		slog.Info("Argus ouvindo", "addr", cfg.Server.Addr, "lang", cfg.Server.Lang)
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErrCh <- err
 		}
 	}()
 
-	// Graceful shutdown & SIGHUP hot-reload handling
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
@@ -147,11 +160,13 @@ func main() {
 	configWatchTicker := time.NewTicker(5 * time.Second)
 	defer configWatchTicker.Stop()
 
+	var debounceCh <-chan time.Time
+
 	reloadConfig := func(reason string) {
-		log.Printf("[INFO] %s; recarregando configuração de %s...", reason, configPath)
+		slog.Info("recarregando configuração", "reason", reason, "path", configPath)
 		newCfg, reloadErr := config.Load(configPath)
 		if reloadErr != nil {
-			log.Printf("[WARN] Falha ao recarregar configuração (mantendo atual): %v", reloadErr)
+			slog.Warn("falha ao recarregar configuração (mantendo atual)", "err", reloadErr)
 			return
 		}
 		rootCancel()
@@ -170,14 +185,14 @@ func main() {
 		scheduler = monitor.NewScheduler(newCfg, store, httpChecker, pingChecker)
 		scheduler.Start(rootCtx)
 		webServer.SetCheckTrigger(scheduler.CheckNow)
-		log.Printf("[INFO] Configuração recarregada (%d sistemas)", len(newCfg.Systems))
+		slog.Info("configuração recarregada", "systems", len(newCfg.Systems))
 	}
 
 loop:
 	for {
 		select {
 		case sig := <-sigCh:
-			log.Printf("[INFO] Sinal recebido (%v); encerrando Argus com segurança...", sig)
+			slog.Info("sinal recebido; encerrando Argus com segurança", "signal", sig)
 			break loop
 		case <-reloadCh:
 			reloadConfig("SIGHUP recebido")
@@ -187,35 +202,37 @@ loop:
 				continue
 			}
 			if !info.ModTime().Equal(lastCfgMod) || info.Size() != lastCfgSize {
-				time.Sleep(150 * time.Millisecond)
-				if latest, statErr := os.Stat(configPath); statErr == nil {
-					lastCfgMod = latest.ModTime()
-					lastCfgSize = latest.Size()
-				}
-				reloadConfig("Alteração detectada no arquivo de configuração")
+				lastCfgMod = info.ModTime()
+				lastCfgSize = info.Size()
+				debounceCh = time.After(150 * time.Millisecond)
 			}
+		case <-debounceCh:
+			debounceCh = nil
+			if latest, statErr := os.Stat(configPath); statErr == nil {
+				lastCfgMod = latest.ModTime()
+				lastCfgSize = latest.Size()
+			}
+			reloadConfig("Alteração detectada no arquivo de configuração")
 		case err := <-serverErrCh:
-			log.Fatalf("[FATAL] Erro no servidor HTTP: %v", err)
+			slog.Error("erro fatal no servidor HTTP", "err", err)
+			os.Exit(1)
 		}
 	}
 
-	// 1. Stop scheduler and check loops
-	log.Printf("[INFO] Parando scheduler...")
+	slog.Info("parando scheduler")
 	rootCancel()
 	scheduler.Stop()
 
-	// 2. Shutdown HTTP server gracefully
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("[WARN] Erro no shutdown do servidor HTTP: %v", err)
+		slog.Warn("erro no shutdown do servidor HTTP", "err", err)
 	}
 
-	// 3. Flush & Close SQLite database
-	log.Printf("[INFO] Gravando pendências e fechando banco SQLite...")
+	slog.Info("gravando pendências e fechando banco SQLite")
 	if err := db.Close(); err != nil {
-		log.Printf("[WARN] Erro ao fechar SQLite: %v", err)
+		slog.Warn("erro ao fechar SQLite", "err", err)
 	}
 
-	log.Printf("[INFO] Argus finalizado com sucesso.")
+	slog.Info("Argus finalizado com sucesso")
 }

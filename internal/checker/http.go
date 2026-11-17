@@ -11,6 +11,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"regexp"
 	"strings"
@@ -99,8 +100,7 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 	}
 
 	host := parsedURL.Hostname()
-	// Step 1: DNS resolution check if target is a hostname (not a raw IP) or ExpectedDNS is set.
-	if (net.ParseIP(host) == nil && host != "localhost") || len(opts.ExpectedDNS) > 0 {
+	if len(opts.ExpectedDNS) > 0 {
 		dnsStart := time.Now()
 		addrs, err := net.DefaultResolver.LookupHost(ctx, host)
 		if err != nil {
@@ -112,7 +112,7 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 				CheckedAt: now,
 			}
 		}
-		if len(opts.ExpectedDNS) > 0 && !containsAnyIP(addrs, opts.ExpectedDNS) {
+		if !containsAnyIP(addrs, opts.ExpectedDNS) {
 			return Result{
 				OK:        false,
 				Latency:   time.Since(dnsStart),
@@ -135,7 +135,42 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 		method = http.MethodGet
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, targetURL, nil)
+	var dnsStart, connStart, tlsStart, reqStart time.Time
+	var dnsDur, connDur, tlsDur, ttfbDur time.Duration
+	trace := &httptrace.ClientTrace{
+		DNSStart: func(httptrace.DNSStartInfo) {
+			dnsStart = time.Now()
+		},
+		DNSDone: func(httptrace.DNSDoneInfo) {
+			if !dnsStart.IsZero() {
+				dnsDur = time.Since(dnsStart)
+			}
+		},
+		ConnectStart: func(_, _ string) {
+			connStart = time.Now()
+		},
+		ConnectDone: func(_, _ string, _ error) {
+			if !connStart.IsZero() {
+				connDur = time.Since(connStart)
+			}
+		},
+		TLSHandshakeStart: func() {
+			tlsStart = time.Now()
+		},
+		TLSHandshakeDone: func(_ tls.ConnectionState, _ error) {
+			if !tlsStart.IsZero() {
+				tlsDur = time.Since(tlsStart)
+			}
+		},
+		GotFirstResponseByte: func() {
+			if !reqStart.IsZero() {
+				ttfbDur = time.Since(reqStart)
+			}
+		},
+	}
+
+	reqCtx := httptrace.WithClientTrace(ctx, trace)
+	req, err := http.NewRequestWithContext(reqCtx, method, targetURL, nil)
 	if err != nil {
 		return Result{
 			OK:        false,
@@ -159,6 +194,7 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 	}
 
 	start := time.Now()
+	reqStart = start
 	resp, err := client.Do(req)
 	latency := time.Since(start)
 
@@ -253,12 +289,16 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 	}
 
 	return Result{
-		OK:          true,
-		StatusCode:  statusCode,
-		Latency:     latency,
-		HasTLS:      hasTLS,
-		TLSDaysLeft: tlsDaysLeft,
-		CheckedAt:   now,
+		OK:             true,
+		StatusCode:     statusCode,
+		Latency:        latency,
+		DNSLatency:     dnsDur,
+		ConnectLatency: connDur,
+		TLSLatency:     tlsDur,
+		TTFBLatency:    ttfbDur,
+		HasTLS:         hasTLS,
+		TLSDaysLeft:    tlsDaysLeft,
+		CheckedAt:      now,
 	}
 }
 
@@ -339,6 +379,11 @@ func matchExpectedBody(body []byte, expected string, precompiled *regexp.Regexp)
 }
 
 func categorizeHTTPError(ctx context.Context, err error) (string, string) {
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) || strings.Contains(err.Error(), "no such host") || strings.Contains(err.Error(), "lookup ") {
+		return CatDNS, i18n.Pick("falha de resolução de nome (DNS)", "DNS name resolution failed")
+	}
+
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return CatTimeout, i18n.Pick("tempo limite da requisição HTTP excedido", "HTTP request timed out")
 	}
@@ -358,10 +403,6 @@ func categorizeHTTPError(ctx context.Context, err error) (string, string) {
 
 	if strings.Contains(err.Error(), "connection refused") {
 		return CatConnect, i18n.Pick("conexão recusada pelo host", "connection refused by host")
-	}
-
-	if strings.Contains(err.Error(), "no such host") {
-		return CatDNS, i18n.Pick("falha de resolução de nome (DNS)", "DNS name resolution failed")
 	}
 
 	return CatConnect, i18n.Pickf("falha de conexão: %v", "connection failed: %v", err)
