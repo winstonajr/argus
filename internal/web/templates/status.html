@@ -1,12 +1,12 @@
 {{define "content"}}
-<main class="main-container" id="status-page" style="max-width: 900px; margin: 0 auto;">
+<main class="main-container status-page-container" id="status-page">
   <div class="history-header">
-    <div class="history-title-group" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:var(--sp-3);">
+    <div class="status-page-header">
       <div>
-        <h1 class="history-title">Status dos Serviços</h1>
-        <span class="mono" style="color:var(--text-muted); font-size:var(--fs-xs);">Atualizado em {{.LastCheckFormatted}}</span>
+        <h1 class="history-title">{{.T.PublicStatusTitle}}</h1>
+        <span class="mono text-muted text-xs">{{.T.UpdatedAt}} {{.LastCheckFormatted}}</span>
       </div>
-      <span class="pill pill--{{.OverallStatusLower}}" style="font-size:var(--fs-sm); padding: 6px 14px;">
+      <span class="pill pill--{{.OverallStatusLower}} pill--lg">
         <span class="dot"></span>
         {{.OverallLabel}}
       </span>
@@ -16,13 +16,13 @@
   <section class="events-section">
     <div class="events-list">
       {{range .Systems}}
-      <div class="event-item" style="justify-content:space-between;">
+      <div class="event-item">
         <div class="event-item__body">
           <strong>{{.Name}}</strong>
           {{if .Group}}<span class="check-row__badge">{{.Group}}</span>{{end}}
         </div>
-        <div style="display:flex; align-items:center; gap:var(--sp-4);">
-          <span class="mono" style="font-size:var(--fs-xs); color:var(--text-muted);">1h: {{printf "%.1f%%" .Uptime1h}}</span>
+        <div class="status-page-item__right">
+          <span class="mono text-muted text-xs">1h: {{printf "%.1f%%" .Uptime1h}}</span>
           <span class="pill pill--{{.StatusLower}}">
             <span class="dot"></span>
             {{.StatusLabel}}

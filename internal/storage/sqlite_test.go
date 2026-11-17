@@ -166,3 +166,51 @@ func TestStorage_SQLiteFlow(t *testing.T) {
 		t.Errorf("expected sys-1 maintenance override to be false, got %+v", overrides)
 	}
 }
+
+func TestStorage_ListEventsInterleavedKindsMTTR(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test_interleaved.db")
+
+	db, err := Open(dbPath, 7*24*time.Hour, 90*24*time.Hour)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	base := time.Now().UTC().Truncate(time.Second)
+	rawEvents := []monitor.ChangeEvent{
+		{SystemID: "s1", Kind: "dns", FromStatus: monitor.StatusUP, ToStatus: monitor.StatusDown, OccurredAt: base.Add(-10 * time.Minute)},
+		{SystemID: "s1", Kind: "ip", FromStatus: monitor.StatusUP, ToStatus: monitor.StatusDown, OccurredAt: base.Add(-8 * time.Minute)},
+		{SystemID: "s1", Kind: "dns", FromStatus: monitor.StatusDown, ToStatus: monitor.StatusUP, OccurredAt: base.Add(-5 * time.Minute)},
+		{SystemID: "s1", Kind: "ip", FromStatus: monitor.StatusDown, ToStatus: monitor.StatusUP, OccurredAt: base.Add(-2 * time.Minute)},
+	}
+	for _, ev := range rawEvents {
+		db.AsyncSaveEvent(ev)
+	}
+	time.Sleep(1200 * time.Millisecond)
+
+	ctx := context.Background()
+	events, err := db.ListEvents(ctx, "s1", base.Add(-15*time.Minute), base, 20)
+	if err != nil {
+		t.Fatalf("ListEvents: %v", err)
+	}
+	if len(events) != 4 {
+		t.Fatalf("expected 4 events, got %d", len(events))
+	}
+
+	var dnsDur, ipDur time.Duration
+	for _, ev := range events {
+		if ev.ToStatus == "UP" && ev.Kind == "dns" {
+			dnsDur = ev.Duration
+		}
+		if ev.ToStatus == "UP" && ev.Kind == "ip" {
+			ipDur = ev.Duration
+		}
+	}
+	if dnsDur != 5*time.Minute {
+		t.Errorf("expected DNS recovery duration 5m, got %v", dnsDur)
+	}
+	if ipDur != 6*time.Minute {
+		t.Errorf("expected IP recovery duration 6m, got %v", ipDur)
+	}
+}

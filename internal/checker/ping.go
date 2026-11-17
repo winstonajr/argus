@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"argus/internal/i18n"
 	probing "github.com/prometheus-community/pro-bing"
 )
 
@@ -31,7 +32,7 @@ func (p *PingChecker) CheckICMP(ctx context.Context, ipStr string, timeout time.
 		return Result{
 			OK:        false,
 			ErrorCat:  CatConnect,
-			Error:     fmt.Sprintf("failed to init pinger for %s: %v", ipStr, err),
+			Error:     i18n.Pickf("falha ao inicializar ping para %s: %v", "failed to init pinger for %s: %v", ipStr, err),
 			CheckedAt: now,
 		}
 	}
@@ -53,7 +54,7 @@ func (p *PingChecker) CheckICMP(ctx context.Context, ipStr string, timeout time.
 			OK:        false,
 			Loss:      100,
 			ErrorCat:  CatTimeout,
-			Error:     "ping cancelado pelo contexto",
+			Error:     i18n.Pick("ping cancelado pelo contexto", "ping canceled by context"),
 			CheckedAt: now,
 		}
 	case err := <-done:
@@ -65,14 +66,14 @@ func (p *PingChecker) CheckICMP(ctx context.Context, ipStr string, timeout time.
 				return Result{
 					OK:        false,
 					ErrorCat:  CatPermission,
-					Error:     "permissão insuficiente para ICMP (necessário cap_net_raw)",
+					Error:     i18n.Pick("permissão insuficiente para ICMP (necessário cap_net_raw)", "insufficient permission for ICMP (cap_net_raw required)"),
 					CheckedAt: now,
 				}
 			}
 			return Result{
 				OK:        false,
 				ErrorCat:  CatConnect,
-				Error:     fmt.Sprintf("falha ao executar ping: %v", err),
+				Error:     i18n.Pickf("falha ao executar ping: %v", "failed to run ping: %v", err),
 				CheckedAt: now,
 			}
 		}
@@ -88,7 +89,7 @@ func (p *PingChecker) CheckICMP(ctx context.Context, ipStr string, timeout time.
 			Loss:      100,
 			Latency:   timeout,
 			ErrorCat:  CatICMPTimeout,
-			Error:     fmt.Sprintf("100%% perda de pacotes ICMP para %s", ipStr),
+			Error:     i18n.Pickf("100%% perda de pacotes ICMP para %s", "100%% ICMP packet loss to %s", ipStr),
 			CheckedAt: now,
 		}
 	}
@@ -99,7 +100,7 @@ func (p *PingChecker) CheckICMP(ctx context.Context, ipStr string, timeout time.
 			Loss:      loss,
 			Latency:   avgRtt,
 			ErrorCat:  CatICMPLoss,
-			Error:     fmt.Sprintf("%.0f%% de perda de pacotes ICMP", loss),
+			Error:     i18n.Pickf("%.0f%% de perda de pacotes ICMP", "%.0f%% ICMP packet loss", loss),
 			CheckedAt: now,
 		}
 	}
@@ -134,7 +135,7 @@ func (p *PingChecker) CheckTCP(ctx context.Context, ipStr string, port int, time
 				OK:        false,
 				Latency:   latency,
 				ErrorCat:  CatTCPRefused,
-				Error:     fmt.Sprintf("porta TCP %d recusou conexão", port),
+				Error:     i18n.Pickf("porta TCP %d recusou conexão", "TCP port %d refused connection", port),
 				CheckedAt: now,
 			}
 		}
@@ -143,7 +144,7 @@ func (p *PingChecker) CheckTCP(ctx context.Context, ipStr string, port int, time
 				OK:        false,
 				Latency:   timeout,
 				ErrorCat:  CatTimeout,
-				Error:     fmt.Sprintf("timeout conectando em %s via TCP", target),
+				Error:     i18n.Pickf("timeout conectando em %s via TCP", "timeout connecting to %s over TCP", target),
 				CheckedAt: now,
 			}
 		}
@@ -151,7 +152,7 @@ func (p *PingChecker) CheckTCP(ctx context.Context, ipStr string, port int, time
 			OK:        false,
 			Latency:   latency,
 			ErrorCat:  CatConnect,
-			Error:     fmt.Sprintf("falha na conexão TCP: %v", err),
+			Error:     i18n.Pickf("falha na conexão TCP: %v", "TCP connection failed: %v", err),
 			CheckedAt: now,
 		}
 	}

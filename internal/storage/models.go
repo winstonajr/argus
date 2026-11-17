@@ -18,14 +18,14 @@ type StoredCheck struct {
 
 // StoredEvent represents a recorded status transition with diagnosis.
 type StoredEvent struct {
-	ID         int64     `json:"id"`
-	SystemID   string    `json:"system_id"`
-	Kind       string    `json:"kind"`
-	FromStatus string    `json:"from_status"`
-	ToStatus   string    `json:"to_status"`
-	Diagnosis  string    `json:"diagnosis"`
-	Detail     string    `json:"detail"`
-	OccurredAt time.Time `json:"occurred_at"`
+	ID         int64         `json:"id"`
+	SystemID   string        `json:"system_id"`
+	Kind       string        `json:"kind"`
+	FromStatus string        `json:"from_status"`
+	ToStatus   string        `json:"to_status"`
+	Diagnosis  string        `json:"diagnosis"`
+	Detail     string        `json:"detail"`
+	OccurredAt time.Time     `json:"occurred_at"`
 	Duration   time.Duration `json:"duration,omitempty"` // computed if recovered
 }
 

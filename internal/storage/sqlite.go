@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	_ "modernc.org/sqlite" // register sqlite3 driver
 	"argus/internal/checker"
 	"argus/internal/monitor"
+	_ "modernc.org/sqlite" // register sqlite3 driver
 )
 
 type writeItemType int
@@ -32,13 +32,13 @@ type writeItem struct {
 
 // DB encapsulates the SQLite connection pool, batch writer, and maintenance.
 type DB struct {
-	db          *sql.DB
-	queue       chan writeItem
-	wg          sync.WaitGroup
-	ctx         context.Context
-	cancel      context.CancelFunc
-	retChecks   time.Duration
-	retEvents   time.Duration
+	db        *sql.DB
+	queue     chan writeItem
+	wg        sync.WaitGroup
+	ctx       context.Context
+	cancel    context.CancelFunc
+	retChecks time.Duration
+	retEvents time.Duration
 }
 
 // Open initializes the SQLite database with WAL mode and tables.

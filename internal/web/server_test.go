@@ -523,3 +523,62 @@ func TestServer_TriggerCheckAndUIControls(t *testing.T) {
 		t.Errorf("expected index page to include PWA manifest link")
 	}
 }
+
+func TestServer_StaticCacheGzipCSRFAndI18n(t *testing.T) {
+	server, _, db := setupTestServer(t)
+	defer db.Close()
+
+	// 1. Static asset with ?v= returns immutable Cache-Control, ETag, and gzip when requested
+	reqStatic := httptest.NewRequest(http.MethodGet, "/static/css/app.css?v=test", nil)
+	reqStatic.Header.Set("Accept-Encoding", "gzip")
+	rrStatic := httptest.NewRecorder()
+	server.ServeHTTP(rrStatic, reqStatic)
+
+	if rrStatic.Code != http.StatusOK {
+		t.Fatalf("GET /static/css/app.css returned %d, want 200", rrStatic.Code)
+	}
+	if !strings.Contains(rrStatic.Header().Get("Cache-Control"), "immutable") {
+		t.Errorf("expected immutable Cache-Control, got %q", rrStatic.Header().Get("Cache-Control"))
+	}
+	if rrStatic.Header().Get("Content-Encoding") != "gzip" {
+		t.Errorf("expected Content-Encoding: gzip, got %q", rrStatic.Header().Get("Content-Encoding"))
+	}
+	etag := rrStatic.Header().Get("ETag")
+	if etag == "" {
+		t.Fatalf("expected non-empty ETag header")
+	}
+
+	// 304 Not Modified on matching If-None-Match
+	req304 := httptest.NewRequest(http.MethodGet, "/static/css/app.css?v=test", nil)
+	req304.Header.Set("If-None-Match", etag)
+	rr304 := httptest.NewRecorder()
+	server.ServeHTTP(rr304, req304)
+	if rr304.Code != http.StatusNotModified {
+		t.Errorf("expected 304 Not Modified, got %d", rr304.Code)
+	}
+
+	// 2. Cross-origin POST blocked by CSRF protection (403)
+	reqCSRF := httptest.NewRequest(http.MethodPost, "/api/systems/erp/maintenance", nil)
+	reqCSRF.Header.Set("Sec-Fetch-Site", "cross-site")
+	rrCSRF := httptest.NewRecorder()
+	server.ServeHTTP(rrCSRF, reqCSRF)
+	if rrCSRF.Code != http.StatusForbidden {
+		t.Errorf("expected 403 Forbidden on cross-site POST, got %d", rrCSRF.Code)
+	}
+
+	// 3. History page empty buckets rendered as timeline-block--unknown (not UP)
+	reqHist := httptest.NewRequest(http.MethodGet, "/systems/portal/history?period=1h", nil)
+	rrHist := httptest.NewRecorder()
+	server.ServeHTTP(rrHist, reqHist)
+	if !strings.Contains(rrHist.Body.String(), "timeline-block--unknown") {
+		t.Errorf("expected empty timeline buckets to render timeline-block--unknown")
+	}
+
+	// 4. Language switch via ?lang=en
+	reqEN := httptest.NewRequest(http.MethodGet, "/?lang=en", nil)
+	rrEN := httptest.NewRecorder()
+	server.ServeHTTP(rrEN, reqEN)
+	if !strings.Contains(rrEN.Body.String(), "Operations Console") {
+		t.Errorf("expected English title 'Operations Console' on /?lang=en")
+	}
+}

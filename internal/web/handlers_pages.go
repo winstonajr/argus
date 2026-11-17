@@ -1,0 +1,433 @@
+package web
+
+import (
+	"bytes"
+	"encoding/csv"
+	"encoding/json"
+	"fmt"
+	"html/template"
+	"log"
+	"net/http"
+	"sort"
+	"strings"
+	"time"
+
+	"argus/internal/i18n"
+	"argus/internal/monitor"
+	"argus/internal/storage"
+)
+
+func parsePeriod(raw string, t i18n.Messages) (period, label string, duration time.Duration, bucketCount int) {
+	switch raw {
+	case "1h":
+		return "1h", t.Period1hLabel, 1 * time.Hour, 30
+	case "7d":
+		return "7d", t.Period7dLabel, 7 * 24 * time.Hour, 84
+	case "30d":
+		return "30d", t.Period30dLabel, 30 * 24 * time.Hour, 90
+	default:
+		return "24h", t.Period24hLabel, 24 * time.Hour, 60
+	}
+}
+
+func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+	t := s.messagesForRequest(w, r)
+	systems := s.store.GetAllSystems()
+
+	groupSet := make(map[string]struct{})
+	for _, sys := range systems {
+		if g := strings.TrimSpace(sys.Group); g != "" {
+			groupSet[g] = struct{}{}
+		}
+	}
+	groups := make([]string, 0, len(groupSet))
+	for g := range groupSet {
+		groups = append(groups, g)
+	}
+	sort.Strings(groups)
+
+	statsHTML, err := s.renderStatsHTML(t)
+	if err != nil {
+		log.Printf("[ERROR] render index stats: %v", err)
+	}
+
+	var cardsBuf bytes.Buffer
+	for _, sys := range systems {
+		vm := toCardViewModelWithLang(sys, t)
+		vm.JustChanged = false
+		if err := s.cardTmpl.Execute(&cardsBuf, vm); err != nil {
+			log.Printf("[ERROR] render index card %s: %v", sys.ID, err)
+		}
+	}
+
+	data := struct {
+		T          i18n.Messages
+		Title      string
+		IconsSVG   template.HTML
+		HideSearch bool
+		Groups     []string
+		StatsHTML  template.HTML
+		CardsHTML  template.HTML
+	}{
+		T:          t,
+		Title:      t.DashboardTitle,
+		IconsSVG:   s.iconsSVG,
+		HideSearch: false,
+		Groups:     groups,
+		StatsHTML:  template.HTML(statsHTML),         //nolint:gosec
+		CardsHTML:  template.HTML(cardsBuf.String()), //nolint:gosec
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.indexTmpl.Execute(w, data); err != nil {
+		log.Printf("[ERROR] render index: %v", err)
+	}
+}
+
+func (s *Server) handleCard(w http.ResponseWriter, r *http.Request) {
+	t := s.messagesForRequest(w, r)
+	id := r.PathValue("id")
+	snap, ok := s.store.GetSystem(id)
+	if !ok {
+		http.Error(w, "system not found", http.StatusNotFound)
+		return
+	}
+
+	vm := toCardViewModelWithLang(snap, t)
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.cardTmpl.Execute(w, vm); err != nil {
+		log.Printf("[ERROR] render card %s: %v", id, err)
+	}
+}
+
+func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	t := s.messagesForRequest(w, r)
+	htmlStr, err := s.renderStatsHTML(t)
+	if err != nil {
+		log.Printf("[ERROR] render stats: %v", err)
+		http.Error(w, "failed to render stats", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(htmlStr))
+}
+
+func (s *Server) renderStatsHTML(t i18n.Messages) (string, error) {
+	stats := s.store.GetSummaryCounts()
+
+	lastCheckStr := "—"
+	if !stats.LastCheck.IsZero() {
+		lastCheckStr = stats.LastCheck.Format("15:04:05")
+	}
+
+	uptimeDur := time.Since(stats.UptimeStart).Truncate(time.Second)
+	uptimeStr := formatDurationShort(uptimeDur)
+
+	data := struct {
+		T                       i18n.Messages
+		UpCount                 int
+		DegradedCount           int
+		DownCount               int
+		Total                   int
+		WorstStatus             string
+		LastCheckFormatted      string
+		UptimeDurationFormatted string
+	}{
+		T:                       t,
+		UpCount:                 stats.UpCount,
+		DegradedCount:           stats.DegradedCount,
+		DownCount:               stats.DownCount,
+		Total:                   stats.Total,
+		WorstStatus:             string(stats.WorstStatus),
+		LastCheckFormatted:      lastCheckStr,
+		UptimeDurationFormatted: uptimeStr,
+	}
+
+	var buf bytes.Buffer
+	if err := s.statsTmpl.Execute(&buf, data); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
+	t := s.messagesForRequest(w, r)
+	id := r.PathValue("id")
+	snap, ok := s.store.GetSystem(id)
+	if !ok {
+		http.Error(w, "system not found", http.StatusNotFound)
+		return
+	}
+
+	period, periodLabel, duration, bucketCount := parsePeriod(r.URL.Query().Get("period"), t)
+
+	to := time.Now().UTC()
+	from := to.Add(-duration)
+
+	ctx := r.Context()
+	var events []storage.StoredEvent
+	var failed []storage.StoredCheck
+	var buckets []storage.TimelineBucket
+	stats := storage.SystemHistoryStats{DNSUptime: 100.0, IPUptime: 100.0}
+
+	if s.storage != nil {
+		var err error
+		events, err = s.storage.ListEvents(ctx, id, from, to, 100)
+		if err != nil {
+			log.Printf("[WARN] list events: %v", err)
+		}
+
+		failed, err = s.storage.ListFailedChecks(ctx, id, from, to, 50, 0)
+		if err != nil {
+			log.Printf("[WARN] list failed checks: %v", err)
+		}
+
+		s.cfgMu.RLock()
+		degLatMs := s.cfg.Defaults.DegradedLatency.Milliseconds()
+		s.cfgMu.RUnlock()
+		buckets, err = s.storage.GetTimelineBucketsWithLatency(ctx, id, from, to, bucketCount, degLatMs)
+		if err != nil {
+			log.Printf("[WARN] timeline buckets: %v", err)
+		}
+
+		stats, err = s.storage.GetSystemUptimeStatsWithEvents(ctx, id, from, to, events)
+		if err != nil {
+			log.Printf("[WARN] uptime stats: %v", err)
+		}
+	}
+
+	eventVMs := make([]eventViewModel, len(events))
+	for i, e := range events {
+		eventVMs[i] = eventViewModel{
+			Kind:                strings.ToUpper(e.Kind),
+			FromStatus:          e.FromStatus,
+			ToStatus:            e.ToStatus,
+			ToStatusLower:       strings.ToLower(e.ToStatus),
+			Diagnosis:           e.Diagnosis,
+			Detail:              e.Detail,
+			OccurredAtFormatted: e.OccurredAt.Local().Format("02/01 15:04:05"),
+			DurationStr:         formatDurationShort(e.Duration),
+		}
+	}
+
+	failedVMs := make([]failedCheckViewModel, len(failed))
+	for i, f := range failed {
+		failedVMs[i] = failedCheckViewModel{
+			Kind:               strings.ToUpper(f.Kind),
+			StatusCode:         f.StatusCode,
+			LatencyMs:          f.LatencyMs,
+			ErrorCat:           f.ErrorCat,
+			ErrorMsg:           f.ErrorMsg,
+			CheckedAtFormatted: f.CheckedAt.Local().Format("02/01 15:04:05"),
+		}
+	}
+
+	bucketVMs := make([]timelineBucketViewModel, len(buckets))
+	for i, b := range buckets {
+		dnsSt := b.DNSStatus
+		ipSt := b.IPStatus
+		if !b.HasData {
+			dnsSt = "UNKNOWN"
+			ipSt = "UNKNOWN"
+		}
+		timeFmt := b.StartTime.Local().Format("15:04")
+		if period == "7d" || period == "30d" {
+			timeFmt = b.StartTime.Local().Format("02/01 15:04")
+		}
+		bucketVMs[i] = timelineBucketViewModel{
+			DNSStatus:      dnsSt,
+			DNSStatusLower: strings.ToLower(dnsSt),
+			IPStatus:       ipSt,
+			IPStatusLower:  strings.ToLower(ipSt),
+			TimeFormatted:  timeFmt,
+		}
+	}
+
+	mttrStr := "—"
+	if stats.MTTR > 0 {
+		mttrStr = formatDurationShort(stats.MTTR)
+	}
+	mtbfStr := "—"
+	if stats.MTBF > 0 {
+		mtbfStr = formatDurationShort(stats.MTBF)
+	}
+
+	downDurStr := ""
+	if snap.DownDuration > 0 {
+		downDurStr = formatDurationShort(snap.DownDuration)
+	}
+
+	data := struct {
+		T                i18n.Messages
+		Title            string
+		IconsSVG         template.HTML
+		HideSearch       bool
+		Groups           []string
+		System           monitor.SystemSnapshot
+		WorstStatus      string
+		WorstStatusLower string
+		Diagnosis        string
+		DownDurationStr  string
+		Period           string
+		PeriodLabel      string
+		Stats            storage.SystemHistoryStats
+		MTTRStr          string
+		MTBFStr          string
+		Events           []eventViewModel
+		FailedChecks     []failedCheckViewModel
+		Buckets          []timelineBucketViewModel
+	}{
+		T:                t,
+		Title:            fmt.Sprintf("%s — %s", snap.Name, t.HistorySuffix),
+		IconsSVG:         s.iconsSVG,
+		HideSearch:       true,
+		System:           snap,
+		WorstStatus:      string(snap.WorstStatus),
+		WorstStatusLower: strings.ToLower(string(snap.WorstStatus)),
+		Diagnosis:        snap.Diagnosis,
+		DownDurationStr:  downDurStr,
+		Period:           period,
+		PeriodLabel:      periodLabel,
+		Stats:            stats,
+		MTTRStr:          mttrStr,
+		MTBFStr:          mtbfStr,
+		Events:           eventVMs,
+		FailedChecks:     failedVMs,
+		Buckets:          bucketVMs,
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.historyTmpl.Execute(w, data); err != nil {
+		log.Printf("[ERROR] render history: %v", err)
+	}
+}
+
+func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
+	t := s.messagesForRequest(w, r)
+	id := r.PathValue("id")
+	snap, ok := s.store.GetSystem(id)
+	if !ok {
+		http.Error(w, "system not found", http.StatusNotFound)
+		return
+	}
+
+	period, _, duration, _ := parsePeriod(r.URL.Query().Get("period"), t)
+	to := time.Now().UTC()
+	from := to.Add(-duration)
+	ctx := r.Context()
+
+	var events []storage.StoredEvent
+	stats := storage.SystemHistoryStats{DNSUptime: 100.0, IPUptime: 100.0}
+	if s.storage != nil {
+		events, _ = s.storage.ListEvents(ctx, id, from, to, 1000)
+		stats, _ = s.storage.GetSystemUptimeStatsWithEvents(ctx, id, from, to, events)
+	}
+
+	format := strings.ToLower(r.URL.Query().Get("format"))
+	if format == "csv" {
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"argus-%s-%s.csv\"", snap.ID, period))
+		cw := csv.NewWriter(w)
+		_ = cw.Write([]string{"occurred_at", "kind", "from_status", "to_status", "diagnosis", "detail", "duration_seconds"})
+		for _, ev := range events {
+			_ = cw.Write([]string{
+				ev.OccurredAt.Format(time.RFC3339),
+				ev.Kind,
+				ev.FromStatus,
+				ev.ToStatus,
+				ev.Diagnosis,
+				ev.Detail,
+				fmt.Sprintf("%.0f", ev.Duration.Seconds()),
+			})
+		}
+		cw.Flush()
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"argus-%s-%s.json\"", snap.ID, period))
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"system_id": snap.ID,
+		"name":      snap.Name,
+		"period":    period,
+		"stats":     stats,
+		"events":    events,
+	})
+}
+
+func (s *Server) handlePublicStatus(w http.ResponseWriter, r *http.Request) {
+	t := s.messagesForRequest(w, r)
+	systems := s.store.GetAllSystems()
+	stats := s.store.GetStats()
+
+	overallLower := "up"
+	overallLabel := t.AllSystemsOperational
+	if stats.DownCount > 0 {
+		overallLower = "down"
+		overallLabel = fmt.Sprintf(t.SystemsDownCountFmt, stats.DownCount)
+	} else if stats.DegradedCount > 0 {
+		overallLower = "degraded"
+		overallLabel = t.PartialDegradation
+	}
+
+	type publicSystemVM struct {
+		Name        string
+		Group       string
+		StatusLower string
+		StatusLabel string
+		Uptime1h    float64
+	}
+
+	vms := make([]publicSystemVM, 0, len(systems))
+	for _, sys := range systems {
+		label := t.StatusNoData
+		switch sys.WorstStatus {
+		case monitor.StatusUP:
+			label = t.StatusOperational
+		case monitor.StatusDegraded:
+			label = t.StatusDegraded
+		case monitor.StatusDown:
+			label = t.StatusDown
+		}
+		vms = append(vms, publicSystemVM{
+			Name:        sys.Name,
+			Group:       sys.Group,
+			StatusLower: strings.ToLower(string(sys.WorstStatus)),
+			StatusLabel: label,
+			Uptime1h:    sys.Uptime1h,
+		})
+	}
+
+	lastCheckStr := "—"
+	if !stats.LastCheck.IsZero() {
+		lastCheckStr = stats.LastCheck.Local().Format("02/01/2006 15:04:05")
+	}
+
+	data := struct {
+		T                  i18n.Messages
+		Title              string
+		IconsSVG           template.HTML
+		HideSearch         bool
+		Groups             []string
+		OverallStatusLower string
+		OverallLabel       string
+		LastCheckFormatted string
+		Systems            []publicSystemVM
+	}{
+		T:                  t,
+		Title:              t.PublicStatusTitle,
+		IconsSVG:           s.iconsSVG,
+		HideSearch:         true,
+		OverallStatusLower: overallLower,
+		OverallLabel:       overallLabel,
+		LastCheckFormatted: lastCheckStr,
+		Systems:            vms,
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.statusTmpl.Execute(w, data); err != nil {
+		log.Printf("[ERROR] render status: %v", err)
+	}
+}

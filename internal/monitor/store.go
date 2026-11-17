@@ -1,7 +1,6 @@
 package monitor
 
 import (
-	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -10,6 +9,7 @@ import (
 
 	"argus/internal/checker"
 	"argus/internal/config"
+	"argus/internal/i18n"
 )
 
 const ringBufferSize = 120
@@ -83,6 +83,7 @@ func (cs *checkState) snapshot(now time.Time) CheckSnapshot {
 		ConsecFails: cs.consecFails,
 		Uptime1h:    cs.uptime(now),
 		HasHistory:  cs.historyCount > 0,
+		TLSWarnDays: cs.tlsWarnDays,
 	}
 }
 
@@ -96,11 +97,11 @@ type systemState struct {
 
 // Store maintains the live in-memory state of all systems.
 type Store struct {
-	mu              sync.RWMutex
-	systems         map[string]*systemState
-	order           []string
-	startTime       time.Time
-	lastCheckTime   time.Time
+	mu               sync.RWMutex
+	systems          map[string]*systemState
+	order            []string
+	startTime        time.Time
+	lastCheckTime    time.Time
 	eventSubscribers []func(ChangeEvent)
 	checkSubscribers []func(sysID string, kind string, res checker.Result)
 }
@@ -522,7 +523,7 @@ func buildHeartbeat(sys *systemState) []HeartbeatTick {
 	for i := 0; i < count; i++ {
 		ticks[i] = HeartbeatTick{
 			Status:  StatusUnknown,
-			Tooltip: "Sem dados",
+			Tooltip: i18n.Pick("Sem dados", "No data"),
 		}
 	}
 
@@ -580,12 +581,12 @@ func buildHeartbeat(sys *systemState) []HeartbeatTick {
 
 		switch st {
 		case StatusUP:
-			tooltip = fmt.Sprintf("Operacional (%dms)", latency.Milliseconds())
+			tooltip = i18n.Pickf("Operacional (%dms)", "Operational (%dms)", latency.Milliseconds())
 		case StatusDegraded:
-			tooltip = fmt.Sprintf("Instável (%dms)", latency.Milliseconds())
+			tooltip = i18n.Pickf("Instável (%dms)", "Degraded (%dms)", latency.Milliseconds())
 		case StatusDown:
 			if tooltip == "" {
-				tooltip = "Fora do ar"
+				tooltip = i18n.Pick("Fora do ar", "Down")
 			}
 		}
 

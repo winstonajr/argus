@@ -1,17 +1,17 @@
 {{define "content"}}
-<main class="main-container">
+<main class="main-container" id="history-page" data-system-id="{{.System.ID}}">
   <div class="history-header">
     <div class="history-topbar">
       <a href="/" class="back-link">
         <svg class="icon"><use href="#icon-arrow-left"></use></svg>
-        <span>Voltar ao painel principal</span>
+        <span>{{.T.BackToDashboard}}</span>
       </a>
 
       <div class="period-buttons">
-        <a href="?period=1h" class="period-btn {{if eq .Period "1h"}}active{{end}}">Última 1h</a>
-        <a href="?period=24h" class="period-btn {{if eq .Period "24h"}}active{{end}}">Últimas 24h</a>
-        <a href="?period=7d" class="period-btn {{if eq .Period "7d"}}active{{end}}">Últimos 7 dias</a>
-        <a href="?period=30d" class="period-btn {{if eq .Period "30d"}}active{{end}}">Últimos 30 dias</a>
+        <a href="?period=1h" class="period-btn {{if eq .Period "1h"}}active{{end}}">{{.T.Period1h}}</a>
+        <a href="?period=24h" class="period-btn {{if eq .Period "24h"}}active{{end}}">{{.T.Period24h}}</a>
+        <a href="?period=7d" class="period-btn {{if eq .Period "7d"}}active{{end}}">{{.T.Period7d}}</a>
+        <a href="?period=30d" class="period-btn {{if eq .Period "30d"}}active{{end}}">{{.T.Period30d}}</a>
         <a href="/systems/{{.System.ID}}/export?period={{.Period}}&format=csv" class="period-btn">CSV</a>
         <a href="/systems/{{.System.ID}}/export?period={{.Period}}&format=json" class="period-btn">JSON</a>
       </div>
@@ -19,79 +19,78 @@
 
     <div class="history-title-group">
       <h1 class="history-title">{{.System.Name}}</h1>
-      <span class="mono" style="color:var(--text-muted);">{{.System.ID}}</span>
+      <span class="mono text-muted">{{.System.ID}}</span>
       <button type="button"
               id="check-now-btn"
               class="period-btn"
               data-system-id="{{.System.ID}}">
-        Testar Agora
+        {{.T.CheckNow}}
       </button>
       <button type="button"
               id="maintenance-toggle-btn"
               class="period-btn {{if .System.InMaintenance}}active{{end}}"
               data-system-id="{{.System.ID}}"
               data-maintenance="{{.System.InMaintenance}}">
-        {{if .System.InMaintenance}}Desativar Manutenção{{else}}Modo Manutenção{{end}}
+        {{if .System.InMaintenance}}{{.T.DisableMaintenance}}{{else}}{{.T.EnableMaintenance}}{{end}}
       </button>
     </div>
 
-    <div class="history-status-banner history-status-banner--{{.WorstStatusLower}}">
+    <div class="history-status-banner history-status-banner--{{.WorstStatusLower}}" id="history-status-banner">
       {{if eq .WorstStatus "UP"}}
-        <svg class="icon icon--inline" style="width:16px;height:16px;"><use href="#icon-up"></use></svg>
+        <svg class="icon icon--inline"><use href="#icon-up"></use></svg>
         <div class="history-status-banner__text">
-          <strong>Operacional</strong>
-          <span>· Todos os alvos operacionais</span>
+          <strong>{{.T.StatusOperational}}</strong>
+          <span>· {{.T.AllTargetsOperational}}</span>
         </div>
       {{else if eq .WorstStatus "DOWN"}}
-        <svg class="icon icon--inline" style="width:16px;height:16px;"><use href="#icon-down"></use></svg>
+        <svg class="icon icon--inline"><use href="#icon-down"></use></svg>
         <div class="history-status-banner__text">
-          <strong>{{if .Diagnosis}}{{.Diagnosis}}{{else}}Sistema fora do ar{{end}}</strong>
-          {{if .DownDurationStr}}<span class="mono">· há {{.DownDurationStr}}</span>{{end}}
+          <strong>{{if .Diagnosis}}{{.Diagnosis}}{{else}}{{.T.SystemDown}}{{end}}</strong>
+          {{if .DownDurationStr}}<span class="mono">· {{.T.ForDurationPrefix}} {{.DownDurationStr}}</span>{{end}}
         </div>
       {{else if eq .WorstStatus "DEGRADED"}}
-        <svg class="icon icon--inline" style="width:16px;height:16px;"><use href="#icon-degraded"></use></svg>
+        <svg class="icon icon--inline"><use href="#icon-degraded"></use></svg>
         <div class="history-status-banner__text">
-          <strong>{{if .Diagnosis}}{{.Diagnosis}}{{else}}Instabilidade detectada{{end}}</strong>
-          {{if .DownDurationStr}}<span class="mono">· há {{.DownDurationStr}}</span>{{end}}
+          <strong>{{if .Diagnosis}}{{.Diagnosis}}{{else}}{{.T.InstabilityDetected}}{{end}}</strong>
+          {{if .DownDurationStr}}<span class="mono">· {{.T.ForDurationPrefix}} {{.DownDurationStr}}</span>{{end}}
         </div>
       {{else}}
-        <svg class="icon icon--inline" style="width:16px;height:16px;"><use href="#icon-unknown"></use></svg>
+        <svg class="icon icon--inline"><use href="#icon-unknown"></use></svg>
         <div class="history-status-banner__text">
-          <span>Aguardando telemetria inicial...</span>
+          <span>{{.T.WaitingInitialTelemetry}}</span>
         </div>
       {{end}}
     </div>
 
-    <!-- Summary Metrics -->
     <div class="metrics-row">
       <div class="metric-card">
-        <div class="metric-card__label">Uptime DNS/HTTP</div>
-        <div class="metric-card__value" style="color:var(--status-up);">{{printf "%.2f%%" .Stats.DNSUptime}}</div>
+        <div class="metric-card__label">{{.T.MetricDNSUptime}}</div>
+        <div class="metric-card__value metric-card__value--up">{{printf "%.2f%%" .Stats.DNSUptime}}</div>
       </div>
 
       <div class="metric-card">
-        <div class="metric-card__label">Uptime IP/Host</div>
-        <div class="metric-card__value" style="color:var(--status-up);">{{printf "%.2f%%" .Stats.IPUptime}}</div>
+        <div class="metric-card__label">{{.T.MetricIPUptime}}</div>
+        <div class="metric-card__value metric-card__value--up">{{printf "%.2f%%" .Stats.IPUptime}}</div>
       </div>
 
       <div class="metric-card">
-        <div class="metric-card__label">Incidentes Registrados</div>
+        <div class="metric-card__label">{{.T.MetricIncidents}}</div>
         <div class="metric-card__value">{{.Stats.IncidentCount}}</div>
       </div>
 
       <div class="metric-card">
-        <div class="metric-card__label">Latência Média / P95</div>
-        <div class="metric-card__value mono" style="font-size:var(--fs-lg);">{{.Stats.AvgLatencyMs}}ms / {{.Stats.P95LatencyMs}}ms</div>
+        <div class="metric-card__label">{{.T.MetricLatencyAvgP95}}</div>
+        <div class="metric-card__value metric-card__value--lg mono">{{.Stats.AvgLatencyMs}}ms / {{.Stats.P95LatencyMs}}ms</div>
       </div>
 
       <div class="metric-card">
-        <div class="metric-card__label">MTTR / MTBF</div>
-        <div class="metric-card__value mono" style="font-size:var(--fs-lg);">{{.MTTRStr}} / {{.MTBFStr}}</div>
+        <div class="metric-card__label">{{.T.MetricMTTRMTBF}}</div>
+        <div class="metric-card__value metric-card__value--lg mono">{{.MTTRStr}} / {{.MTBFStr}}</div>
       </div>
 
       <div class="metric-card">
-        <div class="metric-card__label">Alvo Configurado</div>
-        <div class="mono" style="font-size:var(--fs-sm); margin-top:6px; color:var(--text-muted);">
+        <div class="metric-card__label">{{.T.MetricTarget}}</div>
+        <div class="metric-card__target mono">
           {{if .System.URL}}{{.System.URL}}{{end}}
           {{if and .System.URL .System.IP}} · {{end}}
           {{if .System.IP}}{{.System.IP}}{{end}}
@@ -100,14 +99,13 @@
     </div>
   </div>
 
-  <!-- Visual Timeline Bar -->
   <section class="timeline-section">
-    <div class="section-title">Linha do Tempo ({{.PeriodLabel}})</div>
+    <div class="section-title">{{.T.TimelineTitle}} ({{.PeriodLabel}})</div>
 
     <div class="timeline-row">
       <div class="timeline-label">
-        <span>DNS / Aplicação</span>
-        <span class="mono">{{printf "%.1f%%" .Stats.DNSUptime}} operacional</span>
+        <span>{{.T.DNSAppLabel}}</span>
+        <span class="mono">{{printf "%.1f%%" .Stats.DNSUptime}} {{.T.OperationalLower}}</span>
       </div>
       <div class="timeline-bar">
         {{range .Buckets}}
@@ -119,8 +117,8 @@
 
     <div class="timeline-row">
       <div class="timeline-label">
-        <span>IP / Máquina</span>
-        <span class="mono">{{printf "%.1f%%" .Stats.IPUptime}} operacional</span>
+        <span>{{.T.IPMachineLabel}}</span>
+        <span class="mono">{{printf "%.1f%%" .Stats.IPUptime}} {{.T.OperationalLower}}</span>
       </div>
       <div class="timeline-bar">
         {{range .Buckets}}
@@ -131,9 +129,8 @@
     </div>
   </section>
 
-  <!-- Incident Log -->
   <section class="events-section">
-    <h2 class="section-title">Histórico de Incidentes e Mudanças de Estado</h2>
+    <h2 class="section-title">{{.T.EventsSectionTitle}}</h2>
 
     {{if .Events}}
     <div class="events-list">
@@ -147,55 +144,54 @@
             {{.FromStatus}} → {{.ToStatus}}
           </span>
           <strong>{{.Diagnosis}}</strong>
-          {{if .Detail}}<span style="color:var(--text-muted);">— {{.Detail}}</span>{{end}}
+          {{if .Detail}}<span class="text-muted">— {{.Detail}}</span>{{end}}
         </div>
         {{if .DurationStr}}
-          <div class="mono" style="font-size:var(--fs-xs); color:var(--text-muted);">
-            Duração: {{.DurationStr}}
+          <div class="event-item__duration mono">
+            {{$.T.DurationLabel}}: {{.DurationStr}}
           </div>
         {{end}}
       </div>
       {{end}}
     </div>
     {{else}}
-      <div style="padding:var(--sp-4); text-align:center; color:var(--text-muted);">
-        Nenhum incidente registrado no período selecionado. O sistema operou com 100% de estabilidade.
+      <div class="empty-block">
+        {{.T.NoIncidentsInPeriod}}
       </div>
     {{end}}
   </section>
 
-  <!-- Failed Checks Log -->
   <section class="checks-section">
-    <h2 class="section-title">Verificações com Falha</h2>
+    <h2 class="section-title">{{.T.FailedChecksTitle}}</h2>
 
     {{if .FailedChecks}}
     <div class="table-container">
       <table class="data-table">
         <thead>
           <tr>
-            <th>Horário</th>
-            <th>Tipo</th>
-            <th>Categoria</th>
-            <th>Código / Latência</th>
-            <th>Mensagem de Erro</th>
+            <th>{{.T.ColTime}}</th>
+            <th>{{.T.ColType}}</th>
+            <th>{{.T.ColCategory}}</th>
+            <th>{{.T.ColCodeLatency}}</th>
+            <th>{{.T.ColErrorMessage}}</th>
           </tr>
         </thead>
         <tbody>
           {{range .FailedChecks}}
           <tr>
-            <td class="mono" style="font-size:var(--fs-xs);">{{.CheckedAtFormatted}}</td>
+            <td class="mono text-xs">{{.CheckedAtFormatted}}</td>
             <td><span class="check-row__badge">{{.Kind}}</span></td>
-            <td><span class="mono" style="color:var(--status-down);">{{.ErrorCat}}</span></td>
+            <td><span class="mono text-down">{{.ErrorCat}}</span></td>
             <td class="mono">{{if .StatusCode}}{{.StatusCode}}{{else}}{{if .LatencyMs}}{{.LatencyMs}} ms{{else}}—{{end}}{{end}}</td>
-            <td style="color:var(--text-muted);">{{.ErrorMsg}}</td>
+            <td class="text-muted">{{.ErrorMsg}}</td>
           </tr>
           {{end}}
         </tbody>
       </table>
     </div>
     {{else}}
-      <div style="padding:var(--sp-4); text-align:center; color:var(--text-muted);">
-        Nenhuma verificação com falha gravada no período.
+      <div class="empty-block">
+        {{.T.NoFailedChecksInPeriod}}
       </div>
     {{end}}
   </section>

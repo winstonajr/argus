@@ -97,10 +97,10 @@ func TestStore_StateMachine(t *testing.T) {
 
 func TestStore_Diagnosis(t *testing.T) {
 	tests := []struct {
-		name        string
-		dnsResult   checker.Result
-		ipResult    checker.Result
-		wantDiag    string
+		name      string
+		dnsResult checker.Result
+		ipResult  checker.Result
+		wantDiag  string
 	}{
 		{
 			name:      "Cloudflare error while IP is alive",
@@ -353,5 +353,39 @@ func TestStore_GetSummaryCounts(t *testing.T) {
 	}
 	if summary.WorstStatus != StatusDown {
 		t.Fatalf("expected WorstStatus DOWN, got %s", summary.WorstStatus)
+	}
+}
+
+func TestStore_DiagnosisCustomTLSWarnDays(t *testing.T) {
+	cfg := &config.Config{
+		Defaults: config.DefaultsConfig{
+			Interval:      10 * time.Second,
+			FailThreshold: 2,
+			TLSWarnDays:   30,
+		},
+		Systems: []config.SystemConfig{
+			{ID: "tls-sys", Name: "TLS System", URL: "https://tls.local"},
+		},
+	}
+
+	store := NewStore(cfg)
+	store.RecordDNSResult("tls-sys", checker.Result{
+		OK:          true,
+		StatusCode:  200,
+		Latency:     20 * time.Millisecond,
+		HasTLS:      true,
+		TLSDaysLeft: 22,
+		CheckedAt:   time.Now(),
+	})
+
+	snap, ok := store.GetSystem("tls-sys")
+	if !ok {
+		t.Fatalf("tls-sys not found")
+	}
+	if snap.WorstStatus != StatusDegraded {
+		t.Fatalf("expected StatusDegraded for 22d < 30d warn threshold, got %s", snap.WorstStatus)
+	}
+	if snap.Diagnosis != "Certificado TLS expira em 22d" {
+		t.Errorf("expected TLS expiry diagnosis, got %q", snap.Diagnosis)
 	}
 }

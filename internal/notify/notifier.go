@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"html"
 	"log"
+	"mime"
 	"net"
 	"net/http"
 	"net/smtp"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"argus/internal/config"
+	"argus/internal/i18n"
 	"argus/internal/monitor"
 )
 
@@ -147,16 +149,19 @@ func (n *Notifier) SendTest(ctx context.Context) (int, error) {
 	ev := monitor.ChangeEvent{
 		SystemID:   "argus-test",
 		SystemName: "Argus NOC",
-		Kind:       "teste",
+		Kind:       i18n.Pick("teste", "test"),
 		FromStatus: monitor.StatusUnknown,
 		ToStatus:   monitor.StatusUP,
-		Diagnosis:  "Teste manual de notificação",
-		Detail:     "Se você recebeu esta mensagem, o canal de alertas está operacional.",
+		Diagnosis:  i18n.Pick("Teste manual de notificação", "Manual notification test"),
+		Detail:     i18n.Pick("Se você recebeu esta mensagem, o canal de alertas está operacional.", "If you received this message, the alert channel is operational."),
 		OccurredAt: time.Now(),
 	}
 
-	title := "[TESTE] Argus — Teste de Notificação"
-	body := "Diagnóstico: Teste manual de notificação\nDetalhe: Se você recebeu esta mensagem, o canal de alertas está operacional."
+	title := i18n.Pick("[TESTE] Argus — Teste de Notificação", "[TEST] Argus — Notification Test")
+	body := i18n.Pick(
+		"Diagnóstico: Teste manual de notificação\nDetalhe: Se você recebeu esta mensagem, o canal de alertas está operacional.",
+		"Diagnosis: Manual notification test\nDetail: If you received this message, the alert channel is operational.",
+	)
 	return n.sendToChannels(ctx, cfg, ev, 0, title, body)
 }
 
@@ -169,53 +174,65 @@ func (n *Notifier) dispatch(ctx context.Context, cfg config.AlertsConfig, e moni
 }
 
 func (n *Notifier) sendToChannels(ctx context.Context, cfg config.AlertsConfig, e monitor.ChangeEvent, mttr time.Duration, title, body string) (int, error) {
-	sent := 0
-	var errs []error
+	var (
+		mu   sync.Mutex
+		wg   sync.WaitGroup
+		sent int
+		errs []error
+	)
 
-	if url := strings.TrimSpace(cfg.Webhook.URL); url != "" {
-		payload := map[string]any{
-			"system_id":    e.SystemID,
-			"system_name":  e.SystemName,
-			"kind":         e.Kind,
-			"from_status":  string(e.FromStatus),
-			"to_status":    string(e.ToStatus),
-			"diagnosis":    e.Diagnosis,
-			"detail":       e.Detail,
-			"mttr_seconds": int64(mttr.Seconds()),
-			"occurred_at":  e.OccurredAt,
-			"title":        title,
-			"message":      body,
-		}
-		if err := n.postJSON(ctx, url, payload, cfg.Webhook.Headers); err != nil {
-			log.Printf("[WARN] notify webhook failed: %v", err)
-			errs = append(errs, fmt.Errorf("webhook: %w", err))
+	recordResult := func(channel string, err error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if err != nil {
+			log.Printf("[WARN] notify %s failed: %v", channel, err)
+			errs = append(errs, fmt.Errorf("%s: %w", channel, err))
 		} else {
 			sent++
 		}
+	}
+
+	if url := strings.TrimSpace(cfg.Webhook.URL); url != "" {
+		wg.Add(1)
+		go func(u string) {
+			defer wg.Done()
+			payload := map[string]any{
+				"system_id":    e.SystemID,
+				"system_name":  e.SystemName,
+				"kind":         e.Kind,
+				"from_status":  string(e.FromStatus),
+				"to_status":    string(e.ToStatus),
+				"diagnosis":    e.Diagnosis,
+				"detail":       e.Detail,
+				"mttr_seconds": int64(mttr.Seconds()),
+				"occurred_at":  e.OccurredAt,
+				"title":        title,
+				"message":      body,
+			}
+			recordResult("webhook", n.postJSON(ctx, u, payload, cfg.Webhook.Headers))
+		}(url)
 	}
 
 	if url := strings.TrimSpace(cfg.Slack.WebhookURL); url != "" {
-		payload := map[string]string{
-			"text": fmt.Sprintf("*%s*\n%s", title, body),
-		}
-		if err := n.postJSON(ctx, url, payload, nil); err != nil {
-			log.Printf("[WARN] notify slack failed: %v", err)
-			errs = append(errs, fmt.Errorf("slack: %w", err))
-		} else {
-			sent++
-		}
+		wg.Add(1)
+		go func(u string) {
+			defer wg.Done()
+			payload := map[string]string{
+				"text": fmt.Sprintf("*%s*\n%s", title, body),
+			}
+			recordResult("slack", n.postJSON(ctx, u, payload, nil))
+		}(url)
 	}
 
 	if url := strings.TrimSpace(cfg.Discord.WebhookURL); url != "" {
-		payload := map[string]string{
-			"content": fmt.Sprintf("**%s**\n%s", title, body),
-		}
-		if err := n.postJSON(ctx, url, payload, nil); err != nil {
-			log.Printf("[WARN] notify discord failed: %v", err)
-			errs = append(errs, fmt.Errorf("discord: %w", err))
-		} else {
-			sent++
-		}
+		wg.Add(1)
+		go func(u string) {
+			defer wg.Done()
+			payload := map[string]string{
+				"content": fmt.Sprintf("**%s**\n%s", title, body),
+			}
+			recordResult("discord", n.postJSON(ctx, u, payload, nil))
+		}(url)
 	}
 
 	if token := strings.TrimSpace(cfg.Telegram.BotToken); token != "" && strings.TrimSpace(cfg.Telegram.ChatID) != "" {
@@ -224,28 +241,27 @@ func (n *Notifier) sendToChannels(ctx context.Context, cfg config.AlertsConfig, 
 			baseURL = "https://api.telegram.org"
 		}
 		tgURL := fmt.Sprintf("%s/bot%s/sendMessage", baseURL, token)
-		payload := map[string]string{
-			"chat_id":    cfg.Telegram.ChatID,
-			"text":       fmt.Sprintf("<b>%s</b>\n%s", html.EscapeString(title), html.EscapeString(body)),
-			"parse_mode": "HTML",
-		}
-		if err := n.postJSON(ctx, tgURL, payload, nil); err != nil {
-			log.Printf("[WARN] notify telegram failed: %v", err)
-			errs = append(errs, fmt.Errorf("telegram: %w", err))
-		} else {
-			sent++
-		}
+		wg.Add(1)
+		go func(u string) {
+			defer wg.Done()
+			payload := map[string]string{
+				"chat_id":    cfg.Telegram.ChatID,
+				"text":       fmt.Sprintf("<b>%s</b>\n%s", html.EscapeString(title), html.EscapeString(body)),
+				"parse_mode": "HTML",
+			}
+			recordResult("telegram", n.postJSON(ctx, u, payload, nil))
+		}(tgURL)
 	}
 
 	if strings.TrimSpace(cfg.Email.SMTPHost) != "" && len(cfg.Email.To) > 0 {
-		if err := n.sendEmail(ctx, cfg.Email, title, body); err != nil {
-			log.Printf("[WARN] notify email failed: %v", err)
-			errs = append(errs, fmt.Errorf("email: %w", err))
-		} else {
-			sent++
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			recordResult("email", n.sendEmail(ctx, cfg.Email, title, body))
+		}()
 	}
 
+	wg.Wait()
 	return sent, errors.Join(errs...)
 }
 
@@ -273,18 +289,31 @@ func (n *Notifier) postJSON(ctx context.Context, url string, payload any, header
 	return nil
 }
 
+func sanitizeHeader(v string) string {
+	return strings.NewReplacer("\r", " ", "\n", " ").Replace(strings.TrimSpace(v))
+}
+
 func (n *Notifier) sendEmail(ctx context.Context, emailCfg config.EmailAlertConfig, subject, body string) error {
 	port := emailCfg.SMTPPort
 	if port <= 0 {
 		port = 587
 	}
 	addr := fmt.Sprintf("%s:%d", emailCfg.SMTPHost, port)
-	from := emailCfg.From
+	from := sanitizeHeader(emailCfg.From)
 	if from == "" {
-		from = emailCfg.Username
+		from = sanitizeHeader(emailCfg.Username)
 	}
-	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s\r\n",
-		from, strings.Join(emailCfg.To, ", "), subject, body)
+	cleanTo := make([]string, 0, len(emailCfg.To))
+	for _, rcpt := range emailCfg.To {
+		if clean := sanitizeHeader(rcpt); clean != "" {
+			cleanTo = append(cleanTo, clean)
+		}
+	}
+	encodedSubject := mime.QEncoding.Encode("utf-8", sanitizeHeader(subject))
+	now := time.Now().UTC()
+	msgID := fmt.Sprintf("<%d@argus.local>", now.UnixNano())
+	msg := fmt.Sprintf("Date: %s\r\nMessage-ID: %s\r\nFrom: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s\r\n",
+		now.Format(time.RFC1123Z), msgID, from, strings.Join(cleanTo, ", "), encodedSubject, body)
 
 	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", addr)
 	if err != nil {
@@ -315,7 +344,7 @@ func (n *Notifier) sendEmail(ctx context.Context, emailCfg config.EmailAlertConf
 	if err := c.Mail(from); err != nil {
 		return err
 	}
-	for _, rcpt := range emailCfg.To {
+	for _, rcpt := range cleanTo {
 		if err := c.Rcpt(rcpt); err != nil {
 			return err
 		}
@@ -338,11 +367,11 @@ func formatAlertMessage(e monitor.ChangeEvent, mttr time.Duration) (string, stri
 	var badge string
 	switch e.ToStatus {
 	case monitor.StatusDown:
-		badge = "[FORA DO AR]"
+		badge = i18n.Pick("[FORA DO AR]", "[DOWN]")
 	case monitor.StatusDegraded:
-		badge = "[INSTÁVEL]"
+		badge = i18n.Pick("[INSTÁVEL]", "[DEGRADED]")
 	case monitor.StatusUP:
-		badge = "[RECUPERADO]"
+		badge = i18n.Pick("[RECUPERADO]", "[RECOVERED]")
 	default:
 		badge = fmt.Sprintf("[%s]", e.ToStatus)
 	}
@@ -350,13 +379,13 @@ func formatAlertMessage(e monitor.ChangeEvent, mttr time.Duration) (string, stri
 	title := fmt.Sprintf("%s %s (%s)", badge, e.SystemName, strings.ToUpper(e.Kind))
 	var lines []string
 	if e.Diagnosis != "" {
-		lines = append(lines, "Diagnóstico: "+e.Diagnosis)
+		lines = append(lines, i18n.Pick("Diagnóstico: ", "Diagnosis: ")+e.Diagnosis)
 	}
 	if e.Detail != "" {
-		lines = append(lines, "Detalhe: "+e.Detail)
+		lines = append(lines, i18n.Pick("Detalhe: ", "Detail: ")+e.Detail)
 	}
 	if e.ToStatus == monitor.StatusUP && mttr > 0 {
-		lines = append(lines, "Duração da queda (MTTR): "+mttr.Truncate(time.Second).String())
+		lines = append(lines, i18n.Pick("Duração da queda (MTTR): ", "Downtime duration (MTTR): ")+mttr.Truncate(time.Second).String())
 	}
 	return title, strings.Join(lines, "\n")
 }

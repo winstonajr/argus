@@ -50,10 +50,18 @@ LIMIT ?
 		events = append(events, ev)
 	}
 
-	// Calculate recovery duration where applicable
+	pendingUp := make(map[string]int)
 	for i := range events {
-		if events[i].ToStatus == "UP" && i+1 < len(events) && events[i+1].ToStatus == "DOWN" {
-			events[i].Duration = events[i].OccurredAt.Sub(events[i+1].OccurredAt)
+		switch events[i].ToStatus {
+		case "UP":
+			pendingUp[events[i].Kind] = i
+		case "DOWN":
+			if j, ok := pendingUp[events[i].Kind]; ok {
+				if d := events[j].OccurredAt.Sub(events[i].OccurredAt); d > 0 {
+					events[j].Duration = d
+				}
+				delete(pendingUp, events[i].Kind)
+			}
 		}
 	}
 
@@ -197,6 +205,12 @@ ORDER BY checked_at ASC
 
 // GetSystemUptimeStats calculates DNS and IP uptime percentage and incident counts in range.
 func (d *DB) GetSystemUptimeStats(ctx context.Context, sysID string, from, to time.Time) (SystemHistoryStats, error) {
+	events, _ := d.ListEvents(ctx, sysID, from, to, 500)
+	return d.GetSystemUptimeStatsWithEvents(ctx, sysID, from, to, events)
+}
+
+// GetSystemUptimeStatsWithEvents calculates uptime and latency stats reusing preloaded events.
+func (d *DB) GetSystemUptimeStatsWithEvents(ctx context.Context, sysID string, from, to time.Time, events []StoredEvent) (SystemHistoryStats, error) {
 	stats := SystemHistoryStats{
 		DNSUptime: 100.0,
 		IPUptime:  100.0,
@@ -230,7 +244,6 @@ GROUP BY kind
 		}
 	}
 
-	// Count incidents (number of transitions into DOWN)
 	evQuery := `
 SELECT COUNT(*)
 FROM events
@@ -241,7 +254,6 @@ WHERE system_id = ? AND to_status = 'DOWN' AND occurred_at >= ? AND occurred_at 
 		return stats, fmt.Errorf("count incidents: %w", err)
 	}
 
-	// Calculate Avg and P95 latency for successful checks
 	latQuery := `
 SELECT COALESCE(latency_ms, 0)
 FROM checks
@@ -268,8 +280,7 @@ ORDER BY latency_ms ASC
 		}
 	}
 
-	// Calculate MTTR & MTBF from events in range
-	if events, evErr := d.ListEvents(ctx, sysID, from, to, 500); evErr == nil && len(events) > 0 {
+	if len(events) > 0 {
 		var totalDown time.Duration
 		var resolvedCount int
 		for _, ev := range events {

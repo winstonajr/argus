@@ -5,30 +5,25 @@
    data-name="{{.Name}}"
    data-group="{{.Group}}"
    data-status="{{.WorstStatusLower}}"
+   data-last-check-ms="{{.LastCheckedUnixMs}}"
    href="/systems/{{.ID}}/history">
 
-  <div class="card__progress">
-    <div class="card__progress-bar"></div>
-  </div>
-
-  <!-- Big Status Header Banner (visible from across the room) -->
   <div class="card__banner card__banner--{{.WorstStatusLower}}">
     <div class="card__banner-status">
       <span class="status-beacon status-beacon--{{.WorstStatusLower}}"></span>
       <span class="card__banner-text">
-        {{if eq .WorstStatus "UP"}}OPERACIONAL
-        {{else if eq .WorstStatus "DEGRADED"}}INSTÁVEL
-        {{else if eq .WorstStatus "DOWN"}}FORA DO AR
-        {{else}}SEM DADOS{{end}}
+        {{if eq .WorstStatus "UP"}}{{.T.StatusUpUpper}}
+        {{else if eq .WorstStatus "DEGRADED"}}{{.T.StatusDegradedUpper}}
+        {{else if eq .WorstStatus "DOWN"}}{{.T.StatusDownUpper}}
+        {{else}}{{.T.StatusUnknownUpper}}{{end}}
       </span>
     </div>
     <span class="card__banner-uptime mono">
-      {{if .InMaintenance}}<span class="maintenance-badge">MANUTENÇÃO</span>{{end}}
+      {{if .InMaintenance}}<span class="maintenance-badge">{{.T.MaintenanceUpper}}</span>{{end}}
       1h: {{printf "%.1f%%" .Uptime1h}}
     </span>
   </div>
 
-  <!-- System Name (Large, Bold, High-Contrast) -->
   <div class="card__headline">
     <h2 class="card__title">{{.Name}}</h2>
     {{if .DisplayURL}}
@@ -38,9 +33,7 @@
     {{end}}
   </div>
 
-  <!-- Dual Clear Targets Grid (DNS & IP) -->
   <div class="card__targets-grid">
-    <!-- DNS Target Box -->
     <div class="target-card target-card--{{.DNSStatusLower}}">
       <div class="target-card__top">
         <span class="target-card__label">DNS / WEB</span>
@@ -52,10 +45,10 @@
             {{if .DNS.LastResult.OK}}
               {{.DNSLatencyMs}} ms
             {{else}}
-              {{if .DNS.LastResult.StatusCode}}HTTP {{.DNS.LastResult.StatusCode}}{{else}}FALHA{{end}}
+              {{if .DNS.LastResult.StatusCode}}HTTP {{.DNS.LastResult.StatusCode}}{{else}}{{.T.FailedUpper}}{{end}}
             {{end}}
           {{else}}
-            aguardando...
+            {{.T.Waiting}}
           {{end}}
         {{else}}
           —
@@ -63,7 +56,6 @@
       </div>
     </div>
 
-    <!-- IP Target Box -->
     <div class="target-card target-card--{{.IPStatusLower}}">
       <div class="target-card__top">
         <span class="target-card__label">{{if .IsIPHTTP}}HOST{{else}}IP{{end}} {{if .IPCheck.Configured}}{{.DisplayIP}}{{end}}</span>
@@ -78,13 +70,13 @@
                 <span class="target-card__loss">{{printf "%.0f%%" .IPCheck.LastResult.Loss}}</span>
               {{end}}
             {{else}}
-              {{if eq .IPCheck.LastResult.ErrorCat "permission"}}SEM PERMISSÃO
+              {{if eq .IPCheck.LastResult.ErrorCat "permission"}}{{.T.NoPermissionUpper}}
               {{else if .IPCheck.LastResult.StatusCode}}HTTP {{.IPCheck.LastResult.StatusCode}}
-              {{else if eq .IPCheck.LastResult.ErrorCat "connect"}}RECUSADO
-              {{else}}TIMEOUT{{end}}
+              {{else if eq .IPCheck.LastResult.ErrorCat "connect"}}{{.T.RefusedUpper}}
+              {{else}}{{.T.TimeoutUpper}}{{end}}
             {{end}}
           {{else}}
-            aguardando...
+            {{.T.Waiting}}
           {{end}}
         {{else}}
           —
@@ -93,28 +85,26 @@
     </div>
   </div>
 
-  <!-- Heartbeat Bar & Latency Sparkline -->
   <div class="card__telemetry">
-    <div class="heartbeat-bar" aria-label="Histórico recente">
+    <div class="heartbeat-bar" role="img" aria-label="{{.HeartbeatSummary}}">
       {{range .Heartbeat}}
-        <span class="heartbeat-tick heartbeat-tick--{{.StatusLower}}"></span>
+        <span class="heartbeat-tick heartbeat-tick--{{.StatusLower}}" data-tip="{{.Tooltip}}"></span>
       {{end}}
     </div>
     {{if .HasSparkline}}
-      <svg class="sparkline" viewBox="0 0 60 16" preserveAspectRatio="none" aria-label="Tendência de latência">
+      <svg class="sparkline" viewBox="0 0 60 16" preserveAspectRatio="none" role="img" aria-label="{{.T.LatencyTrendAria}}">
         <polyline points="{{.SparklinePoints}}" />
       </svg>
     {{end}}
   </div>
 
-  <!-- Card Footer -->
   <div class="card__footer">
-    <span class="mono">
-      {{if .LastCheckedTimeOnly}}Última consulta: <strong>{{.LastCheckedTimeOnly}}</strong>{{else}}Aguardando...{{end}}
+    <span class="mono" {{if .LastCheckedFormatted}}title="{{.LastCheckedFormatted}}"{{end}}>
+      {{if .LastCheckedTimeOnly}}{{.T.LastCheck}}: <strong class="card__last-check">{{.LastCheckedTimeOnly}}</strong>{{else}}{{.T.WaitingCap}}{{end}}
     </span>
     {{if .HasTLS}}
-      <span class="ssl-badge mono {{if .TLSExpiringSoon}}ssl-badge--warn{{end}}" title="Validade do certificado TLS">SSL: {{.TLSDaysLeft}}d</span>
+      <span class="ssl-badge mono {{if .TLSExpiringSoon}}ssl-badge--warn{{end}}" title="{{.T.TLSCertValidity}}">SSL: {{.TLSDaysLeft}}d</span>
     {{end}}
-    <span class="card__footer-action">Histórico →</span>
+    <span class="card__footer-action">{{.T.HistoryLink}}</span>
   </div>
 </a>
