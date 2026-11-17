@@ -143,6 +143,8 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /api/systems", s.handleAPISystems)
 	s.mux.HandleFunc("GET /api/systems/{id}", s.handleAPISystem)
+	s.mux.HandleFunc("GET /api/systems/{id}/failed-checks", s.handleAPIFailedChecks)
+	s.mux.HandleFunc("GET /api/cards", s.handleAPICards)
 	s.mux.HandleFunc("POST /api/systems/{id}/check", s.handleTriggerCheck)
 	s.mux.HandleFunc("POST /api/systems/{id}/maintenance", s.handleToggleMaintenance)
 	s.mux.HandleFunc("POST /api/alerts/test", s.handleTestAlert)
@@ -157,6 +159,7 @@ func (s *Server) withSecurityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "SAMEORIGIN")
 		h.Set("Referrer-Policy", "same-origin")
+		h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'")
 		next.ServeHTTP(w, r)
 	})
 }

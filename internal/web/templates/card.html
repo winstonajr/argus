@@ -6,6 +6,7 @@
    data-group="{{.Group}}"
    data-status="{{.WorstStatusLower}}"
    data-last-check-ms="{{.LastCheckedUnixMs}}"
+   data-interval-ms="{{.IntervalMs}}"
    href="/systems/{{.ID}}/history">
 
   <div class="card__banner card__banner--{{.WorstStatusLower}}">
@@ -100,7 +101,7 @@
 
   <div class="card__footer">
     <span class="mono" {{if .LastCheckedFormatted}}title="{{.LastCheckedFormatted}}"{{end}}>
-      {{if .LastCheckedTimeOnly}}{{.T.LastCheck}}: <strong class="card__last-check">{{.LastCheckedTimeOnly}}</strong>{{else}}{{.T.WaitingCap}}{{end}}
+      {{if .LastCheckedTimeOnly}}{{.T.LastCheck}}: <strong class="card__last-check" data-time-only="{{.LastCheckedTimeOnly}}">{{.LastCheckedTimeOnly}}</strong>{{else}}{{.T.WaitingCap}}{{end}}
     </span>
     {{if .HasTLS}}
       <span class="ssl-badge mono {{if .TLSExpiringSoon}}ssl-badge--warn{{end}}" title="{{.T.TLSCertValidity}}">SSL: {{.TLSDaysLeft}}d</span>

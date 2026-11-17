@@ -581,4 +581,23 @@ func TestServer_StaticCacheGzipCSRFAndI18n(t *testing.T) {
 	if !strings.Contains(rrEN.Body.String(), "Operations Console") {
 		t.Errorf("expected English title 'Operations Console' on /?lang=en")
 	}
+	if strings.Contains(rrEN.Body.String(), "htmx.min.js") {
+		t.Errorf("expected HTMX script reference to be removed")
+	}
+
+	// 5. GET /api/cards returns stats_html and cards array
+	reqCards := httptest.NewRequest(http.MethodGet, "/api/cards", nil)
+	rrCards := httptest.NewRecorder()
+	server.ServeHTTP(rrCards, reqCards)
+	if rrCards.Code != http.StatusOK || !strings.Contains(rrCards.Body.String(), `"stats_html"`) {
+		t.Errorf("GET /api/cards failed: %d %s", rrCards.Code, rrCards.Body.String())
+	}
+
+	// 6. GET /api/systems/erp/failed-checks
+	reqFailed := httptest.NewRequest(http.MethodGet, "/api/systems/erp/failed-checks?period=24h&offset=0", nil)
+	rrFailed := httptest.NewRecorder()
+	server.ServeHTTP(rrFailed, reqFailed)
+	if rrFailed.Code != http.StatusOK || !strings.Contains(rrFailed.Body.String(), `"has_more"`) {
+		t.Errorf("GET /api/systems/erp/failed-checks failed: %d %s", rrFailed.Code, rrFailed.Body.String())
+	}
 }

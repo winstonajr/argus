@@ -3,7 +3,7 @@
   <div class="history-header">
     <div class="history-topbar">
       <a href="/" class="back-link">
-        <svg class="icon"><use href="#icon-arrow-left"></use></svg>
+        <svg class="icon" aria-hidden="true"><use href="#icon-arrow-left"></use></svg>
         <span>{{.T.BackToDashboard}}</span>
       </a>
 
@@ -26,36 +26,43 @@
               data-system-id="{{.System.ID}}">
         {{.T.CheckNow}}
       </button>
-      <button type="button"
-              id="maintenance-toggle-btn"
-              class="period-btn {{if .System.InMaintenance}}active{{end}}"
-              data-system-id="{{.System.ID}}"
-              data-maintenance="{{.System.InMaintenance}}">
-        {{if .System.InMaintenance}}{{.T.DisableMaintenance}}{{else}}{{.T.EnableMaintenance}}{{end}}
-      </button>
+      <div class="maintenance-controls">
+        <select id="maintenance-duration" class="group-select" aria-label="Duration">
+          <option value="">{{.T.MaintIndefinite}}</option>
+          <option value="1h">{{.T.Maint1h}}</option>
+          <option value="4h">{{.T.Maint4h}}</option>
+        </select>
+        <button type="button"
+                id="maintenance-toggle-btn"
+                class="period-btn {{if .System.InMaintenance}}active{{end}}"
+                data-system-id="{{.System.ID}}"
+                data-maintenance="{{.System.InMaintenance}}">
+          {{if .System.InMaintenance}}{{.T.DisableMaintenance}}{{else}}{{.T.EnableMaintenance}}{{end}}
+        </button>
+      </div>
     </div>
 
     <div class="history-status-banner history-status-banner--{{.WorstStatusLower}}" id="history-status-banner">
       {{if eq .WorstStatus "UP"}}
-        <svg class="icon icon--inline"><use href="#icon-up"></use></svg>
+        <svg class="icon icon--inline" aria-hidden="true"><use href="#icon-up"></use></svg>
         <div class="history-status-banner__text">
           <strong>{{.T.StatusOperational}}</strong>
           <span>· {{.T.AllTargetsOperational}}</span>
         </div>
       {{else if eq .WorstStatus "DOWN"}}
-        <svg class="icon icon--inline"><use href="#icon-down"></use></svg>
+        <svg class="icon icon--inline" aria-hidden="true"><use href="#icon-down"></use></svg>
         <div class="history-status-banner__text">
           <strong>{{if .Diagnosis}}{{.Diagnosis}}{{else}}{{.T.SystemDown}}{{end}}</strong>
           {{if .DownDurationStr}}<span class="mono">· {{.T.ForDurationPrefix}} {{.DownDurationStr}}</span>{{end}}
         </div>
       {{else if eq .WorstStatus "DEGRADED"}}
-        <svg class="icon icon--inline"><use href="#icon-degraded"></use></svg>
+        <svg class="icon icon--inline" aria-hidden="true"><use href="#icon-degraded"></use></svg>
         <div class="history-status-banner__text">
           <strong>{{if .Diagnosis}}{{.Diagnosis}}{{else}}{{.T.InstabilityDetected}}{{end}}</strong>
           {{if .DownDurationStr}}<span class="mono">· {{.T.ForDurationPrefix}} {{.DownDurationStr}}</span>{{end}}
         </div>
       {{else}}
-        <svg class="icon icon--inline"><use href="#icon-unknown"></use></svg>
+        <svg class="icon icon--inline" aria-hidden="true"><use href="#icon-unknown"></use></svg>
         <div class="history-status-banner__text">
           <span>{{.T.WaitingInitialTelemetry}}</span>
         </div>
@@ -110,7 +117,7 @@
       <div class="timeline-bar">
         {{range .Buckets}}
           <span class="timeline-block timeline-block--{{.DNSStatusLower}}"
-                data-tip="{{.TimeFormatted}}: DNS {{.DNSStatus}}"></span>
+                data-tip="{{.DNSTooltip}}"></span>
         {{end}}
       </div>
     </div>
@@ -123,10 +130,30 @@
       <div class="timeline-bar">
         {{range .Buckets}}
           <span class="timeline-block timeline-block--{{.IPStatusLower}}"
-                data-tip="{{.TimeFormatted}}: IP {{.IPStatus}}"></span>
+                data-tip="{{.IPTooltip}}"></span>
         {{end}}
       </div>
     </div>
+
+    {{if .LatencyChart.HasData}}
+    <div class="latency-chart-wrap">
+      <div class="timeline-label">
+        <span>{{.T.LatencyChartTitle}}</span>
+        <span class="mono">{{.Stats.AvgLatencyMs}}ms avg · max {{.LatencyChart.MaxLatencyMs}}ms</span>
+      </div>
+      <svg class="latency-chart" viewBox="0 0 600 96" preserveAspectRatio="none" role="img" aria-label="{{.T.LatencyChartTitle}}">
+        <polygon class="latency-chart__area" points="{{.LatencyChart.AreaPoints}}" />
+        {{if .LatencyChart.HasDegradedLine}}
+          <line class="latency-chart__threshold" x1="0" y1="{{.LatencyChart.DegradedLineY}}" x2="600" y2="{{.LatencyChart.DegradedLineY}}" />
+        {{end}}
+        <polyline class="latency-chart__line" points="{{.LatencyChart.PolylinePoints}}" />
+      </svg>
+      <div class="latency-chart__axis mono">
+        <span>{{.LatencyChart.StartLabel}}</span>
+        <span>{{.LatencyChart.EndLabel}}</span>
+      </div>
+    </div>
+    {{end}}
   </section>
 
   <section class="events-section">
@@ -135,6 +162,9 @@
     {{if .Events}}
     <div class="events-list">
       {{range .Events}}
+      {{if .DateGroup}}
+        <div class="event-date-header mono">{{.DateGroup}}</div>
+      {{end}}
       <div class="event-item">
         <div class="event-item__time">{{.OccurredAtFormatted}}</div>
         <div class="event-item__body">
@@ -176,7 +206,7 @@
             <th>{{.T.ColErrorMessage}}</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="failed-checks-tbody">
           {{range .FailedChecks}}
           <tr>
             <td class="mono text-xs">{{.CheckedAtFormatted}}</td>
@@ -189,6 +219,18 @@
         </tbody>
       </table>
     </div>
+    {{if .HasMoreFailed}}
+      <div class="load-more-wrap">
+        <button type="button"
+                id="load-more-failed-btn"
+                class="period-btn"
+                data-system-id="{{.System.ID}}"
+                data-period="{{.Period}}"
+                data-offset="50">
+          {{.T.LoadMore}}
+        </button>
+      </div>
+    {{end}}
     {{else}}
       <div class="empty-block">
         {{.T.NoFailedChecksInPeriod}}

@@ -4,27 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{if .Title}}{{.Title}} — {{end}}Argus</title>
-  <link rel="icon" type="image/png" href="{{asset "favicon.png"}}">
+  <link rel="icon" type="image/png" id="favicon-link" href="{{asset "favicon.png"}}">
   <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="apple-touch-icon" sizes="180x180" href="{{asset "apple-touch-icon.png"}}">
   <link rel="manifest" href="{{asset "manifest.json"}}">
   <meta name="theme-color" content="#0E131A">
-  <script>
-    (function() {
-      var savedTheme = localStorage.getItem('argus-theme');
-      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      document.documentElement.setAttribute('data-theme', savedTheme || (prefersDark ? 'dark' : 'light'));
-      if (new URLSearchParams(window.location.search).get('view') === 'tv') {
-        document.documentElement.classList.add('tv-mode');
-      }
-      if (localStorage.getItem('argus-view') === 'compact') {
-        document.documentElement.classList.add('view-compact');
-      }
-    })();
-  </script>
+  <script src="{{asset "js/init.js"}}"></script>
   <link rel="stylesheet" href="{{asset "css/tokens.css"}}">
   <link rel="stylesheet" href="{{asset "css/app.css"}}">
-  <script src="{{asset "vendor/htmx.min.js"}}"></script>
   <script src="{{asset "js/app.js"}}" defer></script>
 </head>
 <body data-lang="{{.T.Lang}}"
@@ -60,16 +47,28 @@
     {{if not .HideSearch}}
     <div class="header__center">
       <div class="search-box">
-        <svg class="icon"><use href="#icon-search"></use></svg>
+        <svg class="icon" aria-hidden="true"><use href="#icon-search"></use></svg>
         <input type="text" id="search-input" placeholder="{{.T.SearchPlaceholder}}" autocomplete="off">
         <span class="kbd">/</span>
       </div>
 
-      <div class="filter-chips">
-        <button class="chip active" data-filter="all">{{.T.FilterAll}}</button>
-        <button class="chip" data-filter="down">{{.T.FilterDown}}</button>
-        <button class="chip" data-filter="degraded">{{.T.FilterDegraded}}</button>
-        <button class="chip" data-filter="up">{{.T.FilterUp}}</button>
+      <div class="filter-chips" role="group" aria-label="Status">
+        <button type="button" class="chip active" data-filter="all" aria-pressed="true">
+          <span>{{.T.FilterAll}}</span>
+          <span class="chip__badge" id="chip-count-all"></span>
+        </button>
+        <button type="button" class="chip" data-filter="down" aria-pressed="false">
+          <span>{{.T.FilterDown}}</span>
+          <span class="chip__badge" id="chip-count-down"></span>
+        </button>
+        <button type="button" class="chip" data-filter="degraded" aria-pressed="false">
+          <span>{{.T.FilterDegraded}}</span>
+          <span class="chip__badge" id="chip-count-degraded"></span>
+        </button>
+        <button type="button" class="chip" data-filter="up" aria-pressed="false">
+          <span>{{.T.FilterUp}}</span>
+          <span class="chip__badge" id="chip-count-up"></span>
+        </button>
       </div>
 
       {{if .Groups}}
@@ -90,36 +89,68 @@
       </div>
 
       {{if not .HideSearch}}
-      <button class="btn-icon" id="sort-toggle-btn" title="{{.T.SortPriorityTitle}}" aria-label="{{.T.SortPriorityTitle}}">
-        <svg class="icon"><use href="#icon-sort"></use></svg>
+      <button type="button" class="btn-icon" id="sort-toggle-btn" title="{{.T.SortPriorityTitle}}" aria-label="{{.T.SortPriorityTitle}}" aria-pressed="false">
+        <svg class="icon" aria-hidden="true"><use href="#icon-sort"></use></svg>
       </button>
 
-      <button class="btn-icon" id="view-toggle-btn" title="{{.T.ViewCompactTitle}}" aria-label="{{.T.ViewCompactTitle}}">
-        <svg class="icon"><use href="#icon-list"></use></svg>
+      <button type="button" class="btn-icon" id="view-toggle-btn" title="{{.T.ViewCompactTitle}}" aria-label="{{.T.ViewCompactTitle}}" aria-pressed="false">
+        <svg class="icon" aria-hidden="true"><use href="#icon-list"></use></svg>
       </button>
       {{end}}
 
-      <button class="btn-icon" id="sound-toggle-btn" title="{{.T.SoundMutedTitle}}" aria-label="{{.T.SoundMutedTitle}}">
-        <svg class="icon"><use href="#icon-bell-off"></use></svg>
+      {{if not .HideNOCControls}}
+      <button type="button" class="btn-icon" id="sound-toggle-btn" title="{{.T.SoundMutedTitle}}" aria-label="{{.T.SoundMutedTitle}}" aria-pressed="false">
+        <svg class="icon" aria-hidden="true"><use href="#icon-bell-off"></use></svg>
       </button>
+      {{end}}
 
       {{if not .HideSearch}}
-      <button class="btn-icon" id="test-alert-btn" title="{{.T.TestAlertTitle}}" aria-label="{{.T.TestAlertTitle}}">
-        <svg class="icon"><use href="#icon-send"></use></svg>
+      <button type="button" class="btn-icon" id="test-alert-btn" title="{{.T.TestAlertTitle}}" aria-label="{{.T.TestAlertTitle}}">
+        <svg class="icon" aria-hidden="true"><use href="#icon-send"></use></svg>
       </button>
       {{end}}
 
-      <button class="btn-icon" id="tv-toggle-btn" title="{{.T.TVModeTitle}}" aria-label="{{.T.TVModeTitle}}">
-        <svg class="icon"><use href="#icon-tv"></use></svg>
+      {{if not .HideNOCControls}}
+      <button type="button" class="btn-icon" id="tv-toggle-btn" title="{{.T.TVModeTitle}}" aria-label="{{.T.TVModeTitle}}" aria-pressed="false">
+        <svg class="icon" aria-hidden="true"><use href="#icon-tv"></use></svg>
       </button>
 
-      <button class="btn-icon" id="theme-toggle-btn" title="{{.T.ThemeToggleTitle}}" aria-label="{{.T.ThemeToggleTitle}}">
-        <svg class="icon"><use href="#icon-moon"></use></svg>
+      <button type="button" class="btn-icon" id="shortcuts-btn" title="{{.T.ShortcutsTitle}}" aria-label="{{.T.ShortcutsTitle}}">
+        <svg class="icon" aria-hidden="true"><use href="#icon-help"></use></svg>
+      </button>
+      {{end}}
+
+      <button type="button" class="btn-icon btn-lang mono" id="lang-toggle-btn" title="{{.T.LangToggleTitle}}" aria-label="{{.T.LangToggleTitle}}">
+        {{if eq .T.Lang "en"}}EN{{else}}PT{{end}}
+      </button>
+
+      <button type="button" class="btn-icon" id="theme-toggle-btn" title="{{.T.ThemeToggleTitle}}" aria-label="{{.T.ThemeToggleTitle}}">
+        <svg class="icon" aria-hidden="true"><use href="#icon-moon"></use></svg>
       </button>
     </div>
   </header>
 
   {{template "content" .}}
+
+  <div id="toast-container" class="toast-container" role="status" aria-live="polite"></div>
+
+  {{if not .HideNOCControls}}
+  <div id="shortcuts-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="shortcuts-modal-title" hidden>
+    <div class="modal-card">
+      <div class="modal-card__header">
+        <h2 id="shortcuts-modal-title" class="modal-card__title">{{.T.ShortcutsModalTitle}}</h2>
+        <button type="button" class="btn-icon" id="shortcuts-close-btn" aria-label="Close">×</button>
+      </div>
+      <div class="shortcuts-list">
+        <div class="shortcut-row"><span class="kbd">/</span><span>{{.T.ShortcutSearch}}</span></div>
+        <div class="shortcut-row"><span class="kbd">1 – 4</span><span>{{.T.ShortcutFilter}}</span></div>
+        <div class="shortcut-row"><span class="kbd">T</span><span>{{.T.ShortcutTheme}}</span></div>
+        <div class="shortcut-row"><span class="kbd">V</span><span>{{.T.ShortcutTV}}</span></div>
+        <div class="shortcut-row"><span class="kbd">?</span><span>{{.T.ShortcutHelp}}</span></div>
+      </div>
+    </div>
+  </div>
+  {{end}}
 
 </body>
 </html>

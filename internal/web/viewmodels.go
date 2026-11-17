@@ -8,6 +8,7 @@ import (
 
 	"argus/internal/i18n"
 	"argus/internal/monitor"
+	"argus/internal/storage"
 )
 
 type cardViewModel struct {
@@ -21,6 +22,7 @@ type cardViewModel struct {
 	DisplayIP            string
 	IsIPHTTP             bool
 	TCPPort              int
+	IntervalMs           int64
 	WorstStatus          string
 	WorstStatusLower     string
 	DNSStatusLower       string
@@ -59,6 +61,7 @@ type eventViewModel struct {
 	Diagnosis           string
 	Detail              string
 	OccurredAtFormatted string
+	DateGroup           string
 	DurationStr         string
 }
 
@@ -74,9 +77,23 @@ type failedCheckViewModel struct {
 type timelineBucketViewModel struct {
 	DNSStatus      string
 	DNSStatusLower string
+	DNSTooltip     string
 	IPStatus       string
 	IPStatusLower  string
+	IPTooltip      string
 	TimeFormatted  string
+}
+
+type latencyChartViewModel struct {
+	HasData         bool
+	PolylinePoints  string
+	AreaPoints      string
+	MaxLatencyMs    int64
+	MidLatencyMs    int64
+	HasDegradedLine bool
+	DegradedLineY   string
+	StartLabel      string
+	EndLabel        string
 }
 
 func toCardViewModel(snap monitor.SystemSnapshot) cardViewModel {
@@ -155,6 +172,11 @@ func toCardViewModelWithLang(snap monitor.SystemSnapshot, t i18n.Messages) cardV
 		tlsWarnDays = 15
 	}
 
+	intervalMs := snap.Interval.Milliseconds()
+	if intervalMs <= 0 {
+		intervalMs = 30000
+	}
+
 	return cardViewModel{
 		T:                    t,
 		ID:                   snap.ID,
@@ -166,6 +188,7 @@ func toCardViewModelWithLang(snap monitor.SystemSnapshot, t i18n.Messages) cardV
 		DisplayIP:            displayIP,
 		IsIPHTTP:             snap.IsIPHTTP,
 		TCPPort:              snap.TCPPort,
+		IntervalMs:           intervalMs,
 		WorstStatus:          string(snap.WorstStatus),
 		WorstStatusLower:     worstLower,
 		DNSStatusLower:       dnsLower,
@@ -189,6 +212,87 @@ func toCardViewModelWithLang(snap monitor.SystemSnapshot, t i18n.Messages) cardV
 		TLSExpiringSoon:      hasTLS && tlsDaysLeft < tlsWarnDays,
 		InMaintenance:        snap.InMaintenance,
 		JustChanged:          snap.JustChanged,
+	}
+}
+
+func buildLatencyChart(buckets []storage.TimelineBucket, degradedLatencyMs int64, period string) latencyChartViewModel {
+	type pt struct {
+		idx int
+		val int64
+	}
+	var pts []pt
+	var maxVal int64
+	for i, b := range buckets {
+		if b.HasData && b.AvgLatencyMs > 0 {
+			pts = append(pts, pt{idx: i, val: b.AvgLatencyMs})
+			if b.AvgLatencyMs > maxVal {
+				maxVal = b.AvgLatencyMs
+			}
+		}
+	}
+	if len(pts) < 2 {
+		return latencyChartViewModel{HasData: false}
+	}
+
+	if maxVal < 10 {
+		maxVal = 10
+	}
+	// Add 15% headroom
+	ceilVal := int64(float64(maxVal) * 1.15)
+	if ceilVal <= 0 {
+		ceilVal = 10
+	}
+
+	const width = 600.0
+	const height = 96.0
+	const padTop = 8.0
+	const plotH = height - padTop - 4.0
+
+	total := len(buckets)
+	if total < 2 {
+		total = 2
+	}
+
+	var poly strings.Builder
+	var firstX, lastX float64
+	for i, p := range pts {
+		x := float64(p.idx) / float64(total-1) * width
+		y := padTop + plotH - (float64(p.val)/float64(ceilVal))*plotH
+		if i == 0 {
+			firstX = x
+		} else {
+			poly.WriteByte(' ')
+		}
+		lastX = x
+		fmt.Fprintf(&poly, "%.1f,%.1f", x, y)
+	}
+
+	polyStr := poly.String()
+	areaStr := fmt.Sprintf("%.1f,%.1f %s %.1f,%.1f", firstX, padTop+plotH, polyStr, lastX, padTop+plotH)
+
+	var hasDeg bool
+	var degYStr string
+	if degradedLatencyMs > 0 && degradedLatencyMs <= ceilVal {
+		hasDeg = true
+		degY := padTop + plotH - (float64(degradedLatencyMs)/float64(ceilVal))*plotH
+		degYStr = fmt.Sprintf("%.1f", degY)
+	}
+
+	timeFmt := "15:04"
+	if period == "7d" || period == "30d" {
+		timeFmt = "02/01 15:04"
+	}
+
+	return latencyChartViewModel{
+		HasData:         true,
+		PolylinePoints:  polyStr,
+		AreaPoints:      areaStr,
+		MaxLatencyMs:    ceilVal,
+		MidLatencyMs:    ceilVal / 2,
+		HasDegradedLine: hasDeg,
+		DegradedLineY:   degYStr,
+		StartLabel:      buckets[0].StartTime.Local().Format(timeFmt),
+		EndLabel:        buckets[len(buckets)-1].EndTime.Local().Format(timeFmt),
 	}
 }
 

@@ -61,21 +61,23 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := struct {
-		T          i18n.Messages
-		Title      string
-		IconsSVG   template.HTML
-		HideSearch bool
-		Groups     []string
-		StatsHTML  template.HTML
-		CardsHTML  template.HTML
+		T               i18n.Messages
+		Title           string
+		IconsSVG        template.HTML
+		HideSearch      bool
+		HideNOCControls bool
+		Groups          []string
+		StatsHTML       template.HTML
+		CardsHTML       template.HTML
 	}{
-		T:          t,
-		Title:      t.DashboardTitle,
-		IconsSVG:   s.iconsSVG,
-		HideSearch: false,
-		Groups:     groups,
-		StatsHTML:  template.HTML(statsHTML),         //nolint:gosec
-		CardsHTML:  template.HTML(cardsBuf.String()), //nolint:gosec
+		T:               t,
+		Title:           t.DashboardTitle,
+		IconsSVG:        s.iconsSVG,
+		HideSearch:      false,
+		HideNOCControls: false,
+		Groups:          groups,
+		StatsHTML:       template.HTML(statsHTML),         //nolint:gosec
+		CardsHTML:       template.HTML(cardsBuf.String()), //nolint:gosec
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -172,6 +174,13 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	var buckets []storage.TimelineBucket
 	stats := storage.SystemHistoryStats{DNSUptime: 100.0, IPUptime: 100.0}
 
+	s.cfgMu.RLock()
+	degLatMs := int64(2000)
+	if s.cfg != nil && s.cfg.Defaults.DegradedLatency > 0 {
+		degLatMs = s.cfg.Defaults.DegradedLatency.Milliseconds()
+	}
+	s.cfgMu.RUnlock()
+
 	if s.storage != nil {
 		var err error
 		events, err = s.storage.ListEvents(ctx, id, from, to, 100)
@@ -184,9 +193,6 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 			log.Printf("[WARN] list failed checks: %v", err)
 		}
 
-		s.cfgMu.RLock()
-		degLatMs := s.cfg.Defaults.DegradedLatency.Milliseconds()
-		s.cfgMu.RUnlock()
 		buckets, err = s.storage.GetTimelineBucketsWithLatency(ctx, id, from, to, bucketCount, degLatMs)
 		if err != nil {
 			log.Printf("[WARN] timeline buckets: %v", err)
@@ -199,7 +205,15 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	eventVMs := make([]eventViewModel, len(events))
+	var prevDate string
 	for i, e := range events {
+		loc := e.OccurredAt.Local()
+		dateStr := loc.Format("02/01/2006")
+		dateGroup := ""
+		if dateStr != prevDate {
+			dateGroup = dateStr
+			prevDate = dateStr
+		}
 		eventVMs[i] = eventViewModel{
 			Kind:                strings.ToUpper(e.Kind),
 			FromStatus:          e.FromStatus,
@@ -207,7 +221,8 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 			ToStatusLower:       strings.ToLower(e.ToStatus),
 			Diagnosis:           e.Diagnosis,
 			Detail:              e.Detail,
-			OccurredAtFormatted: e.OccurredAt.Local().Format("02/01 15:04:05"),
+			OccurredAtFormatted: loc.Format("02/01 15:04:05"),
+			DateGroup:           dateGroup,
 			DurationStr:         formatDurationShort(e.Duration),
 		}
 	}
@@ -236,14 +251,24 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		if period == "7d" || period == "30d" {
 			timeFmt = b.StartTime.Local().Format("02/01 15:04")
 		}
+		dnsTip := fmt.Sprintf("%s: DNS %s", timeFmt, dnsSt)
+		ipTip := fmt.Sprintf("%s: IP %s", timeFmt, ipSt)
+		if b.HasData && b.TotalChecks > 0 {
+			dnsTip = fmt.Sprintf("%s: DNS %s (%d/%d · %dms)", timeFmt, dnsSt, b.OKChecks, b.TotalChecks, b.AvgLatencyMs)
+			ipTip = fmt.Sprintf("%s: IP %s (%d/%d · %dms)", timeFmt, ipSt, b.OKChecks, b.TotalChecks, b.AvgLatencyMs)
+		}
 		bucketVMs[i] = timelineBucketViewModel{
 			DNSStatus:      dnsSt,
 			DNSStatusLower: strings.ToLower(dnsSt),
+			DNSTooltip:     dnsTip,
 			IPStatus:       ipSt,
 			IPStatusLower:  strings.ToLower(ipSt),
+			IPTooltip:      ipTip,
 			TimeFormatted:  timeFmt,
 		}
 	}
+
+	latencyChart := buildLatencyChart(buckets, degLatMs, period)
 
 	mttrStr := "—"
 	if stats.MTTR > 0 {
@@ -264,6 +289,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		Title            string
 		IconsSVG         template.HTML
 		HideSearch       bool
+		HideNOCControls  bool
 		Groups           []string
 		System           monitor.SystemSnapshot
 		WorstStatus      string
@@ -277,12 +303,15 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		MTBFStr          string
 		Events           []eventViewModel
 		FailedChecks     []failedCheckViewModel
+		HasMoreFailed    bool
 		Buckets          []timelineBucketViewModel
+		LatencyChart     latencyChartViewModel
 	}{
 		T:                t,
 		Title:            fmt.Sprintf("%s — %s", snap.Name, t.HistorySuffix),
 		IconsSVG:         s.iconsSVG,
 		HideSearch:       true,
+		HideNOCControls:  false,
 		System:           snap,
 		WorstStatus:      string(snap.WorstStatus),
 		WorstStatusLower: strings.ToLower(string(snap.WorstStatus)),
@@ -295,7 +324,9 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		MTBFStr:          mtbfStr,
 		Events:           eventVMs,
 		FailedChecks:     failedVMs,
+		HasMoreFailed:    len(failedVMs) >= 50,
 		Buckets:          bucketVMs,
+		LatencyChart:     latencyChart,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -372,16 +403,26 @@ func (s *Server) handlePublicStatus(w http.ResponseWriter, r *http.Request) {
 		overallLabel = t.PartialDegradation
 	}
 
+	type publicDayVM struct {
+		StatusLower string
+		Tooltip     string
+	}
+
 	type publicSystemVM struct {
 		Name        string
 		Group       string
 		StatusLower string
 		StatusLabel string
 		Uptime1h    float64
+		Days        []publicDayVM
 	}
 
+	sysNames := make(map[string]string, len(systems))
 	vms := make([]publicSystemVM, 0, len(systems))
+	ctx := r.Context()
+
 	for _, sys := range systems {
+		sysNames[sys.ID] = sys.Name
 		label := t.StatusNoData
 		switch sys.WorstStatus {
 		case monitor.StatusUP:
@@ -391,13 +432,60 @@ func (s *Server) handlePublicStatus(w http.ResponseWriter, r *http.Request) {
 		case monitor.StatusDown:
 			label = t.StatusDown
 		}
+
+		var daysVM []publicDayVM
+		if s.storage != nil {
+			if daily, err := s.storage.GetDailyUptimeBuckets(ctx, sys.ID, 30); err == nil {
+				daysVM = make([]publicDayVM, len(daily))
+				for i, d := range daily {
+					stLower := strings.ToLower(d.Status)
+					dateLabel := d.Day.Local().Format("02/01")
+					tip := fmt.Sprintf("%s: %s", dateLabel, t.StatusNoData)
+					if d.HasData {
+						tip = fmt.Sprintf("%s: %.1f%%", dateLabel, d.UptimePct)
+					}
+					daysVM[i] = publicDayVM{
+						StatusLower: stLower,
+						Tooltip:     tip,
+					}
+				}
+			}
+		}
+
 		vms = append(vms, publicSystemVM{
 			Name:        sys.Name,
 			Group:       sys.Group,
 			StatusLower: strings.ToLower(string(sys.WorstStatus)),
 			StatusLabel: label,
 			Uptime1h:    sys.Uptime1h,
+			Days:        daysVM,
 		})
+	}
+
+	type publicIncidentVM struct {
+		SystemName          string
+		ToStatus            string
+		ToStatusLower       string
+		Diagnosis           string
+		OccurredAtFormatted string
+	}
+	var recentIncidents []publicIncidentVM
+	if s.storage != nil {
+		if rawEvs, err := s.storage.ListAllRecentEvents(ctx, 8); err == nil {
+			for _, ev := range rawEvs {
+				name := sysNames[ev.SystemID]
+				if name == "" {
+					name = ev.SystemID
+				}
+				recentIncidents = append(recentIncidents, publicIncidentVM{
+					SystemName:          name,
+					ToStatus:            ev.ToStatus,
+					ToStatusLower:       strings.ToLower(ev.ToStatus),
+					Diagnosis:           ev.Diagnosis,
+					OccurredAtFormatted: ev.OccurredAt.Local().Format("02/01 15:04"),
+				})
+			}
+		}
 	}
 
 	lastCheckStr := "—"
@@ -410,20 +498,24 @@ func (s *Server) handlePublicStatus(w http.ResponseWriter, r *http.Request) {
 		Title              string
 		IconsSVG           template.HTML
 		HideSearch         bool
+		HideNOCControls    bool
 		Groups             []string
 		OverallStatusLower string
 		OverallLabel       string
 		LastCheckFormatted string
 		Systems            []publicSystemVM
+		RecentIncidents    []publicIncidentVM
 	}{
 		T:                  t,
 		Title:              t.PublicStatusTitle,
 		IconsSVG:           s.iconsSVG,
 		HideSearch:         true,
+		HideNOCControls:    true,
 		OverallStatusLower: overallLower,
 		OverallLabel:       overallLabel,
 		LastCheckFormatted: lastCheckStr,
 		Systems:            vms,
+		RecentIncidents:    recentIncidents,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

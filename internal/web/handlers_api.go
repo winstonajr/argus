@@ -1,11 +1,13 @@
 package web
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +34,78 @@ func (s *Server) handleAPISystems(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(systems)
 }
 
+func (s *Server) handleAPICards(w http.ResponseWriter, r *http.Request) {
+	t := s.messagesForRequest(w, r)
+	systems := s.store.GetAllSystems()
+	statsHTML, _ := s.renderStatsHTML(t)
+
+	type cardItem struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+		HTML   string `json:"html"`
+	}
+	cards := make([]cardItem, 0, len(systems))
+	for _, sys := range systems {
+		var buf bytes.Buffer
+		vm := toCardViewModelWithLang(sys, t)
+		if err := s.cardTmpl.Execute(&buf, vm); err == nil {
+			cards = append(cards, cardItem{
+				ID:     sys.ID,
+				Status: string(sys.WorstStatus),
+				HTML:   buf.String(),
+			})
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"stats_html": statsHTML,
+		"cards":      cards,
+	})
+}
+
+func (s *Server) handleAPIFailedChecks(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, ok := s.store.GetSystem(id); !ok {
+		http.Error(w, `{"error":"system not found"}`, http.StatusNotFound)
+		return
+	}
+
+	t := s.messagesForRequest(w, r)
+	_, _, duration, _ := parsePeriod(r.URL.Query().Get("period"), t)
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	if offset < 0 {
+		offset = 0
+	}
+
+	to := time.Now().UTC()
+	from := to.Add(-duration)
+
+	var items []failedCheckViewModel
+	if s.storage != nil {
+		failed, err := s.storage.ListFailedChecks(r.Context(), id, from, to, 50, offset)
+		if err == nil {
+			items = make([]failedCheckViewModel, len(failed))
+			for i, f := range failed {
+				items[i] = failedCheckViewModel{
+					Kind:               strings.ToUpper(f.Kind),
+					StatusCode:         f.StatusCode,
+					LatencyMs:          f.LatencyMs,
+					ErrorCat:           f.ErrorCat,
+					ErrorMsg:           f.ErrorMsg,
+					CheckedAtFormatted: f.CheckedAt.Local().Format("02/01 15:04:05"),
+				}
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"items":    items,
+		"has_more": len(items) >= 50,
+	})
+}
+
 func (s *Server) handleToggleMaintenance(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	snap, ok := s.store.GetSystem(id)
@@ -44,19 +118,34 @@ func (s *Server) handleToggleMaintenance(w http.ResponseWriter, r *http.Request)
 	if q := r.URL.Query().Get("enabled"); q != "" {
 		next = q == "true" || q == "1"
 	}
-	s.store.SetMaintenance(id, next)
+
+	var until time.Time
+	if next {
+		if durStr := r.URL.Query().Get("duration"); durStr != "" {
+			if d, err := time.ParseDuration(durStr); err == nil && d > 0 {
+				until = time.Now().Add(d)
+			}
+		}
+	}
+
+	s.store.SetMaintenanceUntil(id, next, until)
 	if s.storage != nil {
-		if err := s.storage.SetMaintenanceOverride(r.Context(), id, next); err != nil {
+		if err := s.storage.SetMaintenanceOverrideUntil(r.Context(), id, next, until); err != nil {
 			log.Printf("[WARN] persist maintenance override for %s: %v", id, err)
 		}
 	}
 	s.broadcastSystemUpdate(id)
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	resp := map[string]any{
 		"system_id":      id,
 		"in_maintenance": next,
-	})
+	}
+	if !until.IsZero() {
+		resp["until"] = until.Format(time.RFC3339)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) handleTestAlert(w http.ResponseWriter, r *http.Request) {
