@@ -523,3 +523,141 @@ func TestServer_TriggerCheckAndUIControls(t *testing.T) {
 		t.Errorf("expected index page to include PWA manifest link")
 	}
 }
+
+func TestServer_StaticCacheGzipCSRFAndI18n(t *testing.T) {
+	server, _, db := setupTestServer(t)
+	defer db.Close()
+
+	// 1. Static asset with ?v= returns immutable Cache-Control, ETag, and gzip when requested
+	reqStatic := httptest.NewRequest(http.MethodGet, "/static/css/app.css?v=test", nil)
+	reqStatic.Header.Set("Accept-Encoding", "gzip")
+	rrStatic := httptest.NewRecorder()
+	server.ServeHTTP(rrStatic, reqStatic)
+
+	if rrStatic.Code != http.StatusOK {
+		t.Fatalf("GET /static/css/app.css returned %d, want 200", rrStatic.Code)
+	}
+	if !strings.Contains(rrStatic.Header().Get("Cache-Control"), "immutable") {
+		t.Errorf("expected immutable Cache-Control, got %q", rrStatic.Header().Get("Cache-Control"))
+	}
+	if rrStatic.Header().Get("Content-Encoding") != "gzip" {
+		t.Errorf("expected Content-Encoding: gzip, got %q", rrStatic.Header().Get("Content-Encoding"))
+	}
+	etag := rrStatic.Header().Get("ETag")
+	if etag == "" {
+		t.Fatalf("expected non-empty ETag header")
+	}
+
+	// 304 Not Modified on matching If-None-Match
+	req304 := httptest.NewRequest(http.MethodGet, "/static/css/app.css?v=test", nil)
+	req304.Header.Set("If-None-Match", etag)
+	rr304 := httptest.NewRecorder()
+	server.ServeHTTP(rr304, req304)
+	if rr304.Code != http.StatusNotModified {
+		t.Errorf("expected 304 Not Modified, got %d", rr304.Code)
+	}
+
+	// 2. Cross-origin POST blocked by CSRF protection (403)
+	reqCSRF := httptest.NewRequest(http.MethodPost, "/api/systems/erp/maintenance", nil)
+	reqCSRF.Header.Set("Sec-Fetch-Site", "cross-site")
+	rrCSRF := httptest.NewRecorder()
+	server.ServeHTTP(rrCSRF, reqCSRF)
+	if rrCSRF.Code != http.StatusForbidden {
+		t.Errorf("expected 403 Forbidden on cross-site POST, got %d", rrCSRF.Code)
+	}
+
+	// 3. History page empty buckets rendered as timeline-block--unknown (not UP)
+	reqHist := httptest.NewRequest(http.MethodGet, "/systems/portal/history?period=1h", nil)
+	rrHist := httptest.NewRecorder()
+	server.ServeHTTP(rrHist, reqHist)
+	if !strings.Contains(rrHist.Body.String(), "timeline-block--unknown") {
+		t.Errorf("expected empty timeline buckets to render timeline-block--unknown")
+	}
+
+	// 4. Language switch via ?lang=en
+	reqEN := httptest.NewRequest(http.MethodGet, "/?lang=en", nil)
+	rrEN := httptest.NewRecorder()
+	server.ServeHTTP(rrEN, reqEN)
+	if !strings.Contains(rrEN.Body.String(), "Operations Console") {
+		t.Errorf("expected English title 'Operations Console' on /?lang=en")
+	}
+	if strings.Contains(rrEN.Body.String(), "htmx.min.js") {
+		t.Errorf("expected HTMX script reference to be removed")
+	}
+
+	// 5. GET /api/cards returns stats_html and cards array
+	reqCards := httptest.NewRequest(http.MethodGet, "/api/cards", nil)
+	rrCards := httptest.NewRecorder()
+	server.ServeHTTP(rrCards, reqCards)
+	if rrCards.Code != http.StatusOK || !strings.Contains(rrCards.Body.String(), `"stats_html"`) {
+		t.Errorf("GET /api/cards failed: %d %s", rrCards.Code, rrCards.Body.String())
+	}
+
+	// 6. GET /api/systems/erp/failed-checks
+	reqFailed := httptest.NewRequest(http.MethodGet, "/api/systems/erp/failed-checks?period=24h&offset=0", nil)
+	rrFailed := httptest.NewRecorder()
+	server.ServeHTTP(rrFailed, reqFailed)
+	if rrFailed.Code != http.StatusOK || !strings.Contains(rrFailed.Body.String(), `"has_more"`) {
+		t.Errorf("GET /api/systems/erp/failed-checks failed: %d %s", rrFailed.Code, rrFailed.Body.String())
+	}
+}
+
+func TestServer_AuthMiddlewareAndExpiringMaintenance(t *testing.T) {
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			Addr: ":8080",
+			Auth: config.AuthConfig{
+				Username: "noc",
+				Password: "secret-password",
+				Token:    "api-secret-token",
+			},
+		},
+		Defaults: config.DefaultsConfig{Interval: 10 * time.Second, FailThreshold: 2, DegradedLatency: 2 * time.Second},
+		Systems: []config.SystemConfig{
+			{ID: "erp", Name: "ERP", URL: "https://erp.local"},
+		},
+	}
+	store := monitor.NewStore(cfg)
+	server, err := NewServer(cfg, store, nil)
+	if err != nil {
+		t.Fatalf("NewServer failed: %v", err)
+	}
+
+	// 1. Public routes remain accessible without credentials
+	for _, pubPath := range []string{"/status", "/healthz", "/metrics", "/favicon.ico", "/static/css/tokens.css"} {
+		req := httptest.NewRequest(http.MethodGet, pubPath, nil)
+		rr := httptest.NewRecorder()
+		server.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected public route %s to return 200 without auth, got %d", pubPath, rr.Code)
+		}
+	}
+
+	// 2. Protected routes return 401 without credentials
+	for _, protPath := range []string{"/", "/api/systems", "/systems/erp/history"} {
+		req := httptest.NewRequest(http.MethodGet, protPath, nil)
+		rr := httptest.NewRecorder()
+		server.ServeHTTP(rr, req)
+		if rr.Code != http.StatusUnauthorized {
+			t.Errorf("expected protected route %s to return 401 without auth, got %d", protPath, rr.Code)
+		}
+	}
+
+	// 3. Basic Auth grants access
+	reqBasic := httptest.NewRequest(http.MethodGet, "/", nil)
+	reqBasic.SetBasicAuth("noc", "secret-password")
+	rrBasic := httptest.NewRecorder()
+	server.ServeHTTP(rrBasic, reqBasic)
+	if rrBasic.Code != http.StatusOK {
+		t.Errorf("expected 200 with valid Basic Auth, got %d", rrBasic.Code)
+	}
+
+	// 4. Bearer token grants access & maintenance with duration works
+	reqMaint := httptest.NewRequest(http.MethodPost, "/api/systems/erp/maintenance?enabled=true&duration=1h", nil)
+	reqMaint.Header.Set("Authorization", "Bearer api-secret-token")
+	rrMaint := httptest.NewRecorder()
+	server.ServeHTTP(rrMaint, reqMaint)
+	if rrMaint.Code != http.StatusOK || !strings.Contains(rrMaint.Body.String(), `"until"`) {
+		t.Errorf("expected 200 with until timestamp on maintenance POST, got %d %s", rrMaint.Code, rrMaint.Body.String())
+	}
+}

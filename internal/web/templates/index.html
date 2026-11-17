@@ -7,5 +7,9 @@
   <div class="cards-grid" id="cards-grid">
     {{.CardsHTML}}
   </div>
+  <div id="empty-filter-state" class="empty-filter-state" hidden>
+    <p>{{.T.EmptyFilterTitle}}</p>
+    <button type="button" id="clear-filters-btn" class="period-btn active">{{.T.ClearFilters}}</button>
+  </div>
 </main>
 {{end}}

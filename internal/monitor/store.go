@@ -1,7 +1,6 @@
 package monitor
 
 import (
-	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -10,9 +9,21 @@ import (
 
 	"argus/internal/checker"
 	"argus/internal/config"
+	"argus/internal/i18n"
 )
 
-const ringBufferSize = 120
+const defaultRingBufferSize = 120
+
+func ringSizeForInterval(interval time.Duration) int {
+	if interval <= 0 {
+		return defaultRingBufferSize
+	}
+	needed := int(time.Hour/interval) + 2
+	if needed > defaultRingBufferSize {
+		return needed
+	}
+	return defaultRingBufferSize
+}
 
 type checkState struct {
 	configured      bool
@@ -28,24 +39,28 @@ type checkState struct {
 	tlsWarnDays     int
 }
 
-func newCheckState(configured bool, failThreshold int, degradedLatency time.Duration, tlsWarnDays int) *checkState {
+func newCheckState(configured bool, failThreshold int, degradedLatency time.Duration, tlsWarnDays int, ringSize int) *checkState {
+	if ringSize < defaultRingBufferSize {
+		ringSize = defaultRingBufferSize
+	}
 	return &checkState{
 		configured:      configured,
 		status:          StatusUnknown,
 		failThreshold:   failThreshold,
 		degradedLatency: degradedLatency,
 		tlsWarnDays:     tlsWarnDays,
-		history:         make([]checker.Result, ringBufferSize),
+		history:         make([]checker.Result, ringSize),
 	}
 }
 
 func (cs *checkState) pushResult(res checker.Result) {
-	if !cs.configured {
+	if !cs.configured || len(cs.history) == 0 {
 		return
 	}
+	capSize := len(cs.history)
 	cs.history[cs.historyHead] = res
-	cs.historyHead = (cs.historyHead + 1) % ringBufferSize
-	if cs.historyCount < ringBufferSize {
+	cs.historyHead = (cs.historyHead + 1) % capSize
+	if cs.historyCount < capSize {
 		cs.historyCount++
 	}
 	cs.lastResult = res
@@ -83,24 +98,37 @@ func (cs *checkState) snapshot(now time.Time) CheckSnapshot {
 		ConsecFails: cs.consecFails,
 		Uptime1h:    cs.uptime(now),
 		HasHistory:  cs.historyCount > 0,
+		TLSWarnDays: cs.tlsWarnDays,
 	}
 }
 
 type systemState struct {
-	cfg           config.SystemConfig
-	dns           *checkState
-	ip            *checkState
-	inMaintenance bool
-	lastRun       time.Time
+	cfg              config.SystemConfig
+	interval         time.Duration
+	dns              *checkState
+	ip               *checkState
+	inMaintenance    bool
+	maintenanceUntil time.Time
+	lastRun          time.Time
+}
+
+func (sys *systemState) isInMaintenance(now time.Time) bool {
+	if !sys.inMaintenance {
+		return false
+	}
+	if !sys.maintenanceUntil.IsZero() && !now.Before(sys.maintenanceUntil) {
+		return false
+	}
+	return true
 }
 
 // Store maintains the live in-memory state of all systems.
 type Store struct {
-	mu              sync.RWMutex
-	systems         map[string]*systemState
-	order           []string
-	startTime       time.Time
-	lastCheckTime   time.Time
+	mu               sync.RWMutex
+	systems          map[string]*systemState
+	order            []string
+	startTime        time.Time
+	lastCheckTime    time.Time
 	eventSubscribers []func(ChangeEvent)
 	checkSubscribers []func(sysID string, kind string, res checker.Result)
 }
@@ -123,11 +151,14 @@ func NewStore(cfg *config.Config) *Store {
 		hasDNS := strings.TrimSpace(sys.URL) != ""
 		hasIP := strings.TrimSpace(sys.IP) != ""
 		tlsWarnDays := sys.EffectiveTLSWarnDays(cfg.Defaults)
+		interval := sys.EffectiveInterval(cfg.Defaults)
+		ringSize := ringSizeForInterval(interval)
 
 		s.systems[sys.ID] = &systemState{
 			cfg:           sys,
-			dns:           newCheckState(hasDNS, failThresh, degLat, tlsWarnDays),
-			ip:            newCheckState(hasIP, failThresh, degLat, tlsWarnDays),
+			interval:      interval,
+			dns:           newCheckState(hasDNS, failThresh, degLat, tlsWarnDays, ringSize),
+			ip:            newCheckState(hasIP, failThresh, degLat, tlsWarnDays, ringSize),
 			inMaintenance: sys.Maintenance,
 			lastRun:       time.Time{},
 		}
@@ -139,6 +170,11 @@ func NewStore(cfg *config.Config) *Store {
 
 // SetMaintenance toggles maintenance mode for a system. Returns false if system not found.
 func (s *Store) SetMaintenance(sysID string, enabled bool) bool {
+	return s.SetMaintenanceUntil(sysID, enabled, time.Time{})
+}
+
+// SetMaintenanceUntil toggles maintenance mode with an optional expiration timestamp.
+func (s *Store) SetMaintenanceUntil(sysID string, enabled bool, until time.Time) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	sys, ok := s.systems[sysID]
@@ -146,6 +182,11 @@ func (s *Store) SetMaintenance(sysID string, enabled bool) bool {
 		return false
 	}
 	sys.inMaintenance = enabled
+	if enabled {
+		sys.maintenanceUntil = until
+	} else {
+		sys.maintenanceUntil = time.Time{}
+	}
 	return true
 }
 
@@ -166,10 +207,14 @@ func (s *Store) ReloadConfig(cfg *config.Config) {
 		hasDNS := strings.TrimSpace(sys.URL) != ""
 		hasIP := strings.TrimSpace(sys.IP) != ""
 		tlsWarnDays := sys.EffectiveTLSWarnDays(cfg.Defaults)
+		interval := sys.EffectiveInterval(cfg.Defaults)
+		ringSize := ringSizeForInterval(interval)
 
 		if existing, ok := s.systems[sys.ID]; ok {
 			existing.cfg = sys
+			existing.interval = interval
 			existing.inMaintenance = sys.Maintenance
+			existing.maintenanceUntil = time.Time{}
 			existing.dns.configured = hasDNS
 			existing.dns.failThreshold = failThresh
 			existing.dns.degradedLatency = degLat
@@ -182,8 +227,9 @@ func (s *Store) ReloadConfig(cfg *config.Config) {
 		} else {
 			newSystems[sys.ID] = &systemState{
 				cfg:           sys,
-				dns:           newCheckState(hasDNS, failThresh, degLat, tlsWarnDays),
-				ip:            newCheckState(hasIP, failThresh, degLat, tlsWarnDays),
+				interval:      interval,
+				dns:           newCheckState(hasDNS, failThresh, degLat, tlsWarnDays, ringSize),
+				ip:            newCheckState(hasIP, failThresh, degLat, tlsWarnDays, ringSize),
 				inMaintenance: sys.Maintenance,
 			}
 		}
@@ -327,7 +373,7 @@ func (s *Store) recordResult(sysID string, kind string, res checker.Result) {
 			ToStatus:      newStatus,
 			Diagnosis:     summary,
 			Detail:        detail,
-			InMaintenance: sys.inMaintenance,
+			InMaintenance: sys.isInMaintenance(now),
 			OccurredAt:    res.CheckedAt,
 		}
 	}
@@ -494,9 +540,10 @@ func (s *Store) buildSnapshot(sys *systemState) SystemSnapshot {
 		IP:             sys.cfg.IP,
 		IsIPHTTP:       sys.cfg.IsIPHTTP(),
 		TCPPort:        sys.cfg.TCPPort,
+		Interval:       sys.interval,
 		WorstStatus:    worst,
 		Diagnosis:      diagSummary,
-		InMaintenance:  sys.inMaintenance,
+		InMaintenance:  sys.isInMaintenance(now),
 		DownDuration:   downDuration,
 		Uptime1h:       uptime1h,
 		LastCheckedAt:  lastChecked,
@@ -522,7 +569,7 @@ func buildHeartbeat(sys *systemState) []HeartbeatTick {
 	for i := 0; i < count; i++ {
 		ticks[i] = HeartbeatTick{
 			Status:  StatusUnknown,
-			Tooltip: "Sem dados",
+			Tooltip: i18n.Pick("Sem dados", "No data"),
 		}
 	}
 
@@ -580,12 +627,12 @@ func buildHeartbeat(sys *systemState) []HeartbeatTick {
 
 		switch st {
 		case StatusUP:
-			tooltip = fmt.Sprintf("Operacional (%dms)", latency.Milliseconds())
+			tooltip = i18n.Pickf("Operacional (%dms)", "Operational (%dms)", latency.Milliseconds())
 		case StatusDegraded:
-			tooltip = fmt.Sprintf("Instável (%dms)", latency.Milliseconds())
+			tooltip = i18n.Pickf("Instável (%dms)", "Degraded (%dms)", latency.Milliseconds())
 		case StatusDown:
 			if tooltip == "" {
-				tooltip = "Fora do ar"
+				tooltip = i18n.Pick("Fora do ar", "Down")
 			}
 		}
 
@@ -600,14 +647,15 @@ func buildHeartbeat(sys *systemState) []HeartbeatTick {
 }
 
 func getHistoryIndex(cs *checkState, offsetFromLatest int) int {
-	if !cs.configured || cs.historyCount == 0 || offsetFromLatest >= cs.historyCount {
+	capSize := len(cs.history)
+	if !cs.configured || cs.historyCount == 0 || capSize == 0 || offsetFromLatest >= cs.historyCount {
 		return -1
 	}
 	idx := cs.historyHead - 1 - offsetFromLatest
 	for idx < 0 {
-		idx += ringBufferSize
+		idx += capSize
 	}
-	return idx % ringBufferSize
+	return idx % capSize
 }
 
 func buildLatencyHistory(sys *systemState) []int64 {

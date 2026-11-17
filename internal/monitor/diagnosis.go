@@ -1,97 +1,108 @@
 package monitor
 
 import (
-	"fmt"
-
 	"argus/internal/checker"
+	"argus/internal/i18n"
 )
 
 // Diagnose evaluates DNS and IP states to pinpoint the root cause of an incident.
 func Diagnose(dns *CheckSnapshot, ip *CheckSnapshot) (summary string, detail string) {
-	// If both configured and both are UP
 	if (dns == nil || !dns.Configured || dns.Status == StatusUP) &&
 		(ip == nil || !ip.Configured || ip.Status == StatusUP) {
-		return "Operacional", ""
+		return i18n.Pick("Operacional", "Operational"), ""
 	}
 
 	dnsFailing := dns != nil && dns.Configured && (dns.Status == StatusDown || dns.Status == StatusDegraded)
 	ipFailing := ip != nil && ip.Configured && (ip.Status == StatusDown || ip.Status == StatusDegraded)
 	ipAlive := ip != nil && ip.Configured && ip.Status == StatusUP
 
-	// 1. IP has permission problem
 	if ip != nil && ip.Configured && ip.LastResult.ErrorCat == checker.CatPermission {
-		return "Sem permissão ICMP", "Necessário conceder cap_net_raw no host/container"
+		return i18n.Pick("Sem permissão ICMP", "Missing ICMP permission"),
+			i18n.Pick("Necessário conceder cap_net_raw no host/container", "Grant cap_net_raw capability on host/container")
 	}
 
-	// 2. TLS error or expiring soon
 	if dns != nil && dns.Configured && dns.LastResult.ErrorCat == checker.CatTLS {
-		return "Certificado TLS inválido", dns.LastResult.Error
+		return i18n.Pick("Certificado TLS inválido", "Invalid TLS certificate"), dns.LastResult.Error
 	}
-	if dns != nil && dns.Configured && dns.LastResult.HasTLS && dns.LastResult.OK && dns.Status == StatusDegraded && dns.LastResult.TLSDaysLeft < 15 {
-		return fmt.Sprintf("Certificado TLS expira em %dd", dns.LastResult.TLSDaysLeft), "Renove o certificado SSL/TLS antes do vencimento"
+	if dns != nil && dns.Configured && dns.LastResult.HasTLS {
+		warnDays := dns.TLSWarnDays
+		if warnDays <= 0 {
+			warnDays = 15
+		}
+		if dns.LastResult.TLSDaysLeft < 0 {
+			return i18n.Pick("Certificado TLS expirado", "TLS certificate expired"),
+				i18n.Pick("Renove o certificado SSL/TLS imediatamente", "Renew the SSL/TLS certificate immediately")
+		}
+		if dns.LastResult.OK && dns.Status == StatusDegraded && dns.LastResult.TLSDaysLeft < warnDays {
+			return i18n.Pickf("Certificado TLS expira em %dd", "TLS certificate expires in %dd", dns.LastResult.TLSDaysLeft),
+				i18n.Pick("Renove o certificado SSL/TLS antes do vencimento", "Renew the SSL/TLS certificate before expiration")
+		}
 	}
 	if dns != nil && dns.Configured && dns.LastResult.ErrorCat == checker.CatUnexpectedBody {
-		return "Conteúdo inesperado", dns.LastResult.Error
+		return i18n.Pick("Conteúdo inesperado", "Unexpected response body"), dns.LastResult.Error
 	}
 
-	// 3. DNS domain resolution failure
 	if dns != nil && dns.Configured && dns.LastResult.ErrorCat == checker.CatDNS {
 		if ipAlive {
-			return "Problema de DNS", fmt.Sprintf("Nome não resolve (%s), mas o IP responde ao ping", dns.LastResult.Error)
+			return i18n.Pick("Problema de DNS", "DNS issue"),
+				i18n.Pickf("Nome não resolve (%s), mas o IP responde ao ping", "Hostname failed to resolve (%s), but IP responds to ping", dns.LastResult.Error)
 		}
-		return "Problema de DNS", dns.LastResult.Error
+		return i18n.Pick("Problema de DNS", "DNS issue"), dns.LastResult.Error
 	}
 
-	// 4. Cloudflare or Edge Proxy failure
 	if dns != nil && dns.Configured && dns.LastResult.ErrorCat == checker.CatProxy {
 		if ipAlive {
-			return "Aplicação fora (borda Cloudflare)", fmt.Sprintf("%s; VM/IP operacional", dns.LastResult.Error)
+			return i18n.Pick("Aplicação fora (borda Cloudflare)", "Application down (Cloudflare edge)"),
+				i18n.Pickf("%s; VM/IP operacional", "%s; VM/IP operational", dns.LastResult.Error)
 		}
-		return "Aplicação fora (borda Cloudflare)", dns.LastResult.Error
+		return i18n.Pick("Aplicação fora (borda Cloudflare)", "Application down (Cloudflare edge)"), dns.LastResult.Error
 	}
 
-	// 5. HTTP 5xx Server Error
 	if dns != nil && dns.Configured && dns.LastResult.ErrorCat == checker.CatHTTP5xx {
 		if ipAlive {
-			return "Aplicação fora", fmt.Sprintf("%s; VM operacional", dns.LastResult.Error)
+			return i18n.Pick("Aplicação fora", "Application down"),
+				i18n.Pickf("%s; VM operacional", "%s; VM operational", dns.LastResult.Error)
 		}
-		return "Aplicação fora", dns.LastResult.Error
+		return i18n.Pick("Aplicação fora", "Application down"), dns.LastResult.Error
 	}
 
-	// 6. HTTP connection refused or timeout
 	if dns != nil && dns.Configured && (dns.LastResult.ErrorCat == checker.CatConnect || dns.LastResult.ErrorCat == checker.CatTimeout) {
 		if ipAlive {
-			return "Serviço não responde", fmt.Sprintf("Serviço HTTP indisponível (%s), mas VM responde ao ping", dns.LastResult.Error)
+			return i18n.Pick("Serviço não responde", "Service unresponsive"),
+				i18n.Pickf("Serviço HTTP indisponível (%s), mas VM responde ao ping", "HTTP service unavailable (%s), but VM responds to ping", dns.LastResult.Error)
 		}
 	}
 
-	// 7. Both failing or IP unreachable
 	if ipFailing && dnsFailing {
-		return "VM ou rede fora", "Máquina não responde ao ping e serviço HTTP indisponível"
+		return i18n.Pick("VM ou rede fora", "VM or network down"),
+			i18n.Pick("Máquina não responde ao ping e serviço HTTP indisponível", "Host does not respond to ping and HTTP service is unavailable")
 	}
 
 	if ipFailing && (dns == nil || !dns.Configured) {
 		if ip.LastResult.ErrorCat == checker.CatTCPRefused {
-			return "Porta TCP recusada", ip.LastResult.Error
+			return i18n.Pick("Porta TCP recusada", "TCP port refused"), ip.LastResult.Error
 		}
-		return "VM ou rede fora", fmt.Sprintf("Host inalcançável: %s", ip.LastResult.Error)
+		return i18n.Pick("VM ou rede fora", "VM or network down"),
+			i18n.Pickf("Host inalcançável: %s", "Host unreachable: %s", ip.LastResult.Error)
 	}
 
-	// 8. DNS UP but IP DOWN
 	if (!dnsFailing && dns != nil && dns.Configured) && ipFailing {
 		if ip.LastResult.StatusCode > 0 {
-			return "Host interno com erro", fmt.Sprintf("Aplicação pública responde, mas host interno retornou HTTP %d", ip.LastResult.StatusCode)
+			return i18n.Pick("Host interno com erro", "Internal host error"),
+				i18n.Pickf("Aplicação pública responde, mas host interno retornou HTTP %d", "Public app responds, but internal host returned HTTP %d", ip.LastResult.StatusCode)
 		}
 		if ip.LastResult.ErrorCat == checker.CatConnect || ip.LastResult.ErrorCat == checker.CatTimeout {
-			return "Host interno inacessível", fmt.Sprintf("Aplicação responde via borda, mas host interno falhou: %s", ip.LastResult.Error)
+			return i18n.Pick("Host interno inacessível", "Internal host unreachable"),
+				i18n.Pickf("Aplicação responde via borda, mas host interno falhou: %s", "App responds via edge, but internal host failed: %s", ip.LastResult.Error)
 		}
-		return "Ping falhando", "Aplicação responde via HTTP, mas IP não responde ao ping (verifique firewall/ICMP)"
+		return i18n.Pick("Ping falhando", "Ping failing"),
+			i18n.Pick("Aplicação responde via HTTP, mas IP não responde ao ping (verifique firewall/ICMP)", "Application responds over HTTP, but IP does not respond to ping (check firewall/ICMP)")
 	}
 
-	// 9. Generic degraded
 	if (dns != nil && dns.Status == StatusDegraded) || (ip != nil && ip.Status == StatusDegraded) {
-		return "Instabilidade / Lentidão", "Tempo de resposta elevado ou perda pontual de pacotes"
+		return i18n.Pick("Instabilidade / Lentidão", "Degraded / High Latency"),
+			i18n.Pick("Tempo de resposta elevado ou perda pontual de pacotes", "Elevated response time or intermittent packet loss")
 	}
 
-	return "Sob investigação", ""
+	return i18n.Pick("Sob investigação", "Under investigation"), ""
 }

@@ -241,3 +241,11 @@ func TestNotifier_SendTest(t *testing.T) {
 		t.Errorf("expected sent=1 and called=1, got sent=%d called=%d", sent, called)
 	}
 }
+
+func TestNotifier_SanitizeHeader(t *testing.T) {
+	dirty := "Subject\r\nBcc: attacker@evil.com\nInjected: yes"
+	clean := sanitizeHeader(dirty)
+	if strings.ContainsAny(clean, "\r\n") {
+		t.Errorf("sanitizeHeader did not strip CR/LF: %q", clean)
+	}
+}
