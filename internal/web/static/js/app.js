@@ -426,6 +426,7 @@
     const nextCard = tpl.content.firstElementChild;
     if (!nextCard) return;
 
+    nextCard.classList.add('card--pulsed');
     existing.replaceWith(nextCard);
     checkTransitionAndNotify(nextCard);
   }

@@ -108,4 +108,27 @@
     {{end}}
     <span class="card__footer-action">{{.T.HistoryLink}}</span>
   </div>
+
+  <div class="card__tv-meta">
+    {{if .DNS.Configured}}
+      <div class="tv-pill tv-pill--{{.DNSStatusLower}}">
+        <span class="tv-pill__label"><span class="tv-pill__dot"></span>DNS</span>
+        <span class="tv-pill__val mono">
+          {{if .DNS.HasHistory}}
+            {{if .DNS.LastResult.OK}}{{.DNSLatencyMs}}ms{{else}}{{if .DNS.LastResult.StatusCode}}{{.DNS.LastResult.StatusCode}}{{else}}OFF{{end}}{{end}}
+          {{else}}…{{end}}
+        </span>
+      </div>
+    {{end}}
+    {{if .IPCheck.Configured}}
+      <div class="tv-pill tv-pill--{{.IPStatusLower}}">
+        <span class="tv-pill__label"><span class="tv-pill__dot"></span>{{if .IsIPHTTP}}HOST{{else}}IP{{end}}</span>
+        <span class="tv-pill__val mono">
+          {{if .IPCheck.HasHistory}}
+            {{if .IPCheck.LastResult.OK}}{{.IPLatencyMs}}ms{{else}}{{if .IPCheck.LastResult.StatusCode}}{{.IPCheck.LastResult.StatusCode}}{{else}}OFF{{end}}{{end}}
+          {{else}}…{{end}}
+        </span>
+      </div>
+    {{end}}
+  </div>
 </a>
