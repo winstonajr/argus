@@ -32,9 +32,28 @@
     } catch (_) {}
   }
 
-  function toggleTVMode() {
-    const isTV = document.documentElement.classList.toggle('tv-mode');
+  function initTVMode() {
     const btn = document.getElementById('tv-toggle-btn');
+    if (!document.getElementById('cards-grid')) {
+      document.documentElement.classList.remove('tv-mode');
+      return;
+    }
+    const isTV = document.documentElement.classList.contains('tv-mode');
+    if (btn) {
+      btn.classList.toggle('active', isTV);
+      btn.setAttribute('aria-pressed', isTV ? 'true' : 'false');
+    }
+  }
+
+  function toggleTVMode() {
+    const btn = document.getElementById('tv-toggle-btn');
+    if (!document.getElementById('cards-grid')) {
+      if (btn) {
+        window.location.assign('/?view=tv');
+      }
+      return;
+    }
+    const isTV = document.documentElement.classList.toggle('tv-mode');
     if (btn) {
       btn.classList.toggle('active', isTV);
       btn.setAttribute('aria-pressed', isTV ? 'true' : 'false');
@@ -785,7 +804,9 @@
     } else if (e.key === 't' || e.key === 'T') {
       toggleTheme();
     } else if (e.key === 'v' || e.key === 'V') {
-      toggleTVMode();
+      if (document.getElementById('tv-toggle-btn')) {
+        toggleTVMode();
+      }
     } else if (e.key === '1') {
       setFilter('all');
     } else if (e.key === '2') {
@@ -1202,7 +1223,33 @@
     });
   }
 
+  function initAutoHideScrollbar() {
+    const scrollTimers = new WeakMap();
+
+    function markScrolling(target) {
+      if (!target || !target.classList) return;
+      target.classList.add('is-scrolling');
+      const prevTimer = scrollTimers.get(target);
+      if (prevTimer) clearTimeout(prevTimer);
+      scrollTimers.set(target, setTimeout(function() {
+        target.classList.remove('is-scrolling');
+      }, 900));
+    }
+
+    window.addEventListener('scroll', function() {
+      markScrolling(document.documentElement);
+    }, { passive: true });
+
+    document.addEventListener('scroll', function(e) {
+      if (e.target && e.target !== document && e.target !== document.documentElement) {
+        markScrolling(e.target);
+      }
+    }, { capture: true, passive: true });
+  }
+
   window.addEventListener('DOMContentLoaded', function() {
+    initAutoHideScrollbar();
+    initTVMode();
     initViewMode();
     initSound();
     seedInitialStatuses();

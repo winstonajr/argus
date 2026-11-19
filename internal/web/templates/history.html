@@ -98,9 +98,23 @@
       <div class="metric-card">
         <div class="metric-card__label">{{.T.MetricTarget}}</div>
         <div class="metric-card__target mono">
-          {{if .System.URL}}{{.System.URL}}{{end}}
-          {{if and .System.URL .System.IP}} · {{end}}
-          {{if .System.IP}}{{.System.IP}}{{end}}
+          {{if .System.URL}}
+            <a href="{{.System.URL}}" target="_blank" rel="noopener noreferrer" class="metric-card__link" title="{{.System.URL}}">
+              <span>{{.System.URL}}</span>
+              <svg class="icon icon--external" aria-hidden="true"><use href="#icon-external-link"></use></svg>
+            </a>
+          {{end}}
+          {{if and .System.URL .System.IP}}<span class="metric-card__sep" aria-hidden="true">·</span>{{end}}
+          {{if .System.IP}}
+            {{if .System.IsIPHTTP}}
+              <a href="{{.System.IP}}" target="_blank" rel="noopener noreferrer" class="metric-card__link" title="{{.System.IP}}">
+                <span>{{.System.IP}}</span>
+                <svg class="icon icon--external" aria-hidden="true"><use href="#icon-external-link"></use></svg>
+              </a>
+            {{else}}
+              <span>{{.System.IP}}</span>
+            {{end}}
+          {{end}}
         </div>
       </div>
     </div>
