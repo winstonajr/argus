@@ -227,6 +227,25 @@ func contains(str, substr string) bool {
 	return len(str) >= len(substr) && (str == substr || len(substr) == 0 || (len(str) > 0 && len(substr) > 0 && stringContains(str, substr)))
 }
 
+func TestSantaEasterEggDefaultAndEnvOverride(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Server.SantaEasterEgg {
+		t.Fatalf("expected Server.SantaEasterEgg default to be false")
+	}
+
+	t.Setenv("ARGUS_SANTA_EASTER_EGG", "true")
+	cfg.applyEnvOverrides()
+	if !cfg.Server.SantaEasterEgg {
+		t.Fatalf("expected ARGUS_SANTA_EASTER_EGG=true to enable SantaEasterEgg")
+	}
+
+	t.Setenv("ARGUS_SANTA_EASTER_EGG", "false")
+	cfg.applyEnvOverrides()
+	if cfg.Server.SantaEasterEgg {
+		t.Fatalf("expected ARGUS_SANTA_EASTER_EGG=false to disable SantaEasterEgg")
+	}
+}
+
 func stringContains(s, substr string) bool {
 	for i := 0; i+len(substr) <= len(s); i++ {
 		if s[i:i+len(substr)] == substr {

@@ -584,6 +584,9 @@ func TestServer_StaticCacheGzipCSRFAndI18n(t *testing.T) {
 	if strings.Contains(rrEN.Body.String(), "htmx.min.js") {
 		t.Errorf("expected HTMX script reference to be removed")
 	}
+	if !strings.Contains(rrEN.Body.String(), `data-santa-easter-egg="`) {
+		t.Errorf("expected body to include data-santa-easter-egg attribute")
+	}
 
 	// 5. GET /api/cards returns stats_html and cards array
 	reqCards := httptest.NewRequest(http.MethodGet, "/api/cards", nil)

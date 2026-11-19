@@ -31,7 +31,8 @@
       data-toast-maint-on="{{.T.ToastMaintEnabled}}"
       data-toast-maint-off="{{.T.ToastMaintDisabled}}"
       data-toast-check-done="{{.T.ToastCheckDone}}"
-      data-toast-rate-limit="{{.T.ToastRateLimit}}">
+      data-toast-rate-limit="{{.T.ToastRateLimit}}"
+      data-santa-easter-egg="{{if .SantaEasterEgg}}true{{else}}false{{end}}">
   <div class="sr-sprite">
     {{.IconsSVG}}
   </div>

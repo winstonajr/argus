@@ -66,6 +66,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		IconsSVG        template.HTML
 		HideSearch      bool
 		HideNOCControls bool
+		SantaEasterEgg  bool
 		Groups          []string
 		StatsHTML       template.HTML
 		CardsHTML       template.HTML
@@ -75,6 +76,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		IconsSVG:        s.iconsSVG,
 		HideSearch:      false,
 		HideNOCControls: false,
+		SantaEasterEgg:  s.santaEasterEggEnabled(),
 		Groups:          groups,
 		StatsHTML:       template.HTML(statsHTML),         //nolint:gosec
 		CardsHTML:       template.HTML(cardsBuf.String()), //nolint:gosec
@@ -290,6 +292,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		IconsSVG         template.HTML
 		HideSearch       bool
 		HideNOCControls  bool
+		SantaEasterEgg   bool
 		Groups           []string
 		System           monitor.SystemSnapshot
 		WorstStatus      string
@@ -312,6 +315,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		IconsSVG:         s.iconsSVG,
 		HideSearch:       true,
 		HideNOCControls:  false,
+		SantaEasterEgg:   s.santaEasterEggEnabled(),
 		System:           snap,
 		WorstStatus:      string(snap.WorstStatus),
 		WorstStatusLower: strings.ToLower(string(snap.WorstStatus)),
@@ -499,6 +503,7 @@ func (s *Server) handlePublicStatus(w http.ResponseWriter, r *http.Request) {
 		IconsSVG           template.HTML
 		HideSearch         bool
 		HideNOCControls    bool
+		SantaEasterEgg     bool
 		Groups             []string
 		OverallStatusLower string
 		OverallLabel       string
@@ -511,6 +516,7 @@ func (s *Server) handlePublicStatus(w http.ResponseWriter, r *http.Request) {
 		IconsSVG:           s.iconsSVG,
 		HideSearch:         true,
 		HideNOCControls:    true,
+		SantaEasterEgg:     s.santaEasterEggEnabled(),
 		OverallStatusLower: overallLower,
 		OverallLabel:       overallLabel,
 		LastCheckFormatted: lastCheckStr,

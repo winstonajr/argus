@@ -73,6 +73,7 @@ Configuration precedence: **Environment Variables > YAML File > Built-in Default
 |---|---|---|
 | `ARGUS_SERVER_ADDR` | `:8080` | HTTP listen address and port (or `PORT=8080`) |
 | `ARGUS_LANG` | `pt-BR` | UI, diagnosis, and alert language (`pt-BR` or `en`) |
+| `ARGUS_SANTA_EASTER_EGG` | `false` | Enables snow and Santa sleigh with 9 reindeer when all systems are `DOWN` (YAML: `server.santa_easter_egg`) |
 | `ARGUS_SERVER_AUTH_USERNAME` | `admin` | Basic Auth username (active when password is set) |
 | `ARGUS_SERVER_AUTH_PASSWORD` | — | Basic Auth password (protects UI/API; `/status`, `/healthz`, `/metrics` remain public) |
 | `ARGUS_SERVER_AUTH_TOKEN` | — | Bearer / `X-Argus-Token` API token |

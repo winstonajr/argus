@@ -98,6 +98,15 @@ func (c *Config) applyEnvOverrides() {
 	} else if tok := os.Getenv("ARGUS_AUTH_TOKEN"); tok != "" {
 		c.Server.Auth.Token = tok
 	}
+	if santa := os.Getenv("ARGUS_SANTA_EASTER_EGG"); santa != "" {
+		if b, err := strconv.ParseBool(santa); err == nil {
+			c.Server.SantaEasterEgg = b
+		}
+	} else if santa := os.Getenv("ARGUS_SERVER_SANTA_EASTER_EGG"); santa != "" {
+		if b, err := strconv.ParseBool(santa); err == nil {
+			c.Server.SantaEasterEgg = b
+		}
+	}
 
 	if storagePath := os.Getenv("ARGUS_STORAGE_PATH"); storagePath != "" {
 		c.Storage.Path = storagePath

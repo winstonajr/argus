@@ -77,9 +77,10 @@ func (a AuthConfig) Enabled() bool {
 
 // ServerConfig holds HTTP server parameters.
 type ServerConfig struct {
-	Addr string     `yaml:"addr"`
-	Lang string     `yaml:"lang"`
-	Auth AuthConfig `yaml:"auth"`
+	Addr           string     `yaml:"addr"`
+	Lang           string     `yaml:"lang"`
+	Auth           AuthConfig `yaml:"auth"`
+	SantaEasterEgg bool       `yaml:"santa_easter_egg"`
 }
 
 // StorageConfig holds SQLite storage parameters and retention settings.
@@ -210,8 +211,9 @@ func Load(path string) (*Config, error) {
 func DefaultConfig() *Config {
 	return &Config{
 		Server: ServerConfig{
-			Addr: ":8080",
-			Lang: i18n.LangPT,
+			Addr:           ":8080",
+			Lang:           i18n.LangPT,
+			SantaEasterEgg: false,
 		},
 		Storage: StorageConfig{
 			Path:            "./data/argus.db",

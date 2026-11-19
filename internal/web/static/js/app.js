@@ -345,19 +345,201 @@
     } catch (_) {}
   }
 
+  const santaState = {
+    active: false,
+    rafId: null,
+    resizeHandler: null,
+    canvas: null,
+    stage: null
+  };
+
+  function createReindeerMarkup(x, y, isRudolph) {
+    const nose = isRudolph
+      ? '<circle cx="56" cy="14" r="4.2" fill="#EF4444" fill-opacity="0.35"/><circle cx="56" cy="14" r="2.4" fill="#EF4444"/>'
+      : '<circle cx="55.5" cy="14" r="1.8" fill="#451A03"/>';
+    return (
+      '<g transform="translate(' + x + ', ' + y + ')">' +
+        '<ellipse cx="26" cy="26" rx="14" ry="8" fill="#92400E"/>' +
+        '<path d="M18 32 L15 44 M23 33 L22 44 M32 32 L34 44 M37 31 L41 43" stroke="#78350F" stroke-width="2.5" stroke-linecap="round"/>' +
+        '<path d="M12 24 L8 20" stroke="#78350F" stroke-width="2.5" stroke-linecap="round"/>' +
+        '<path d="M35 22 L42 12 L48 14" stroke="#92400E" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<circle cx="46" cy="13" r="6" fill="#92400E"/>' +
+        '<ellipse cx="52" cy="14" rx="4" ry="3" fill="#B45309"/>' +
+        nose +
+        '<circle cx="47" cy="11.5" r="1" fill="#1E293B"/>' +
+        '<path d="M43 8 L40 2 M40 5 L37 4 M45 8 L47 2 M47 5 L50 4" stroke="#D97706" stroke-width="1.6" stroke-linecap="round"/>' +
+        '<path d="M35 21 L42 23" stroke="#DC2626" stroke-width="2.5" stroke-linecap="round"/>' +
+        '<circle cx="38.5" cy="23" r="1.5" fill="#FDE047"/>' +
+      '</g>'
+    );
+  }
+
+  function createSantaSleighMarkup() {
+    const reindeerCount = 9;
+    let reindeerMarkup = '';
+    for (let i = 0; i < reindeerCount; i++) {
+      const x = 128 + i * 33;
+      const y = i % 2 === 0 ? 18 : 15;
+      reindeerMarkup += createReindeerMarkup(x, y, i === reindeerCount - 1);
+    }
+
+    return (
+      '<div class="santa-sleigh-runner">' +
+        '<svg class="santa-sleigh-svg" viewBox="0 0 460 74" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+          '<g opacity="0.9">' +
+            '<circle cx="14" cy="46" r="2" fill="#FDE047"/>' +
+            '<circle cx="6" cy="52" r="1.5" fill="#FFFFFF"/>' +
+            '<circle cx="22" cy="54" r="1.5" fill="#FDE047"/>' +
+          '</g>' +
+          '<path d="M108 42 Q260 36 426 40" stroke="#FBBF24" stroke-width="1.5" stroke-dasharray="3 2"/>' +
+          '<path d="M26 58 Q58 64 98 56 C106 54 110 48 106 44" stroke="#FBBF24" stroke-width="3" stroke-linecap="round"/>' +
+          '<path d="M36 58 L38 50 M88 57 L90 49" stroke="#FBBF24" stroke-width="2.5" stroke-linecap="round"/>' +
+          '<path d="M30 36 C30 48 40 52 54 52 L92 52 C102 52 108 46 108 38 L94 38 C90 44 82 44 76 38 L52 38 C46 38 42 32 34 32 Z" fill="#DC2626" stroke="#991B1B" stroke-width="1.5"/>' +
+          '<path d="M32 36 L108 38" stroke="#FBBF24" stroke-width="2" stroke-linecap="round"/>' +
+          '<rect x="38" y="25" width="14" height="12" rx="2" fill="#16A34A"/>' +
+          '<path d="M45 25 V37 M38 31 H52" stroke="#FDE047" stroke-width="2"/>' +
+          '<rect x="50" y="29" width="11" height="9" rx="1.5" fill="#2563EB"/>' +
+          '<path d="M55.5 29 V38 M50 33.5 H61" stroke="#FFFFFF" stroke-width="1.5"/>' +
+          '<circle cx="72" cy="24" r="7" fill="#FCA5A5"/>' +
+          '<path d="M64 34 C64 27 80 27 80 34 L82 42 L62 42 Z" fill="#DC2626"/>' +
+          '<path d="M65 36 H79" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>' +
+          '<path d="M65 25 C65 32 79 32 79 25 C77 29 67 29 65 25 Z" fill="#FFFFFF"/>' +
+          '<circle cx="72" cy="28" r="4" fill="#FFFFFF"/>' +
+          '<path d="M65 20 C67 11 77 11 80 19 Z" fill="#DC2626"/>' +
+          '<rect x="64" y="18" width="16" height="3.5" rx="1.75" fill="#FFFFFF"/>' +
+          '<circle cx="81" cy="19" r="2.5" fill="#FFFFFF"/>' +
+          '<circle cx="70" cy="23" r="1" fill="#1E293B"/>' +
+          '<circle cx="74" cy="23" r="1" fill="#1E293B"/>' +
+          reindeerMarkup +
+          '<g transform="translate(88, 2)">' +
+            '<rect x="0" y="0" width="54" height="16" rx="8" fill="#0F172A" fill-opacity="0.82" stroke="#F87171" stroke-width="1"/>' +
+            '<text x="27" y="11" text-anchor="middle" fill="#FFFFFF" font-family="monospace" font-size="8" font-weight="bold">HO HO HO!</text>' +
+          '</g>' +
+        '</svg>' +
+      '</div>'
+    );
+  }
+
+  function startSantaEasterEgg() {
+    if (santaState.active || !document.body) return;
+    santaState.active = true;
+
+    const canvas = document.createElement('canvas');
+    canvas.id = 'santa-snow-canvas';
+    canvas.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(canvas);
+    santaState.canvas = canvas;
+
+    const stage = document.createElement('div');
+    stage.id = 'santa-sleigh-stage';
+    stage.setAttribute('aria-hidden', 'true');
+    stage.innerHTML = createSantaSleighMarkup();
+    document.body.appendChild(stage);
+    santaState.stage = stage;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    resize();
+    santaState.resizeHandler = resize;
+    window.addEventListener('resize', resize);
+
+    const flakes = [];
+    const flakeCount = 75;
+    for (let i = 0; i < flakeCount; i++) {
+      flakes.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        r: 1.2 + Math.random() * 2.8,
+        speedY: 0.7 + Math.random() * 1.4,
+        swayAmp: 0.3 + Math.random() * 0.7,
+        swaySpeed: 0.01 + Math.random() * 0.02,
+        phase: Math.random() * Math.PI * 2,
+        opacity: 0.35 + Math.random() * 0.55
+      });
+    }
+
+    function tick() {
+      if (!santaState.active) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      for (let i = 0; i < flakes.length; i++) {
+        const f = flakes[i];
+        f.phase += f.swaySpeed;
+        f.y += f.speedY;
+        f.x += Math.sin(f.phase) * f.swayAmp;
+
+        if (f.y > canvas.height + 6) {
+          f.y = -6;
+          f.x = Math.random() * canvas.width;
+        }
+        if (f.x > canvas.width + 6) f.x = -6;
+        if (f.x < -6) f.x = canvas.width + 6;
+
+        ctx.beginPath();
+        ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255, 255, 255, ' + f.opacity.toFixed(2) + ')';
+        ctx.fill();
+      }
+
+      santaState.rafId = window.requestAnimationFrame(tick);
+    }
+
+    santaState.rafId = window.requestAnimationFrame(tick);
+  }
+
+  function stopSantaEasterEgg() {
+    if (!santaState.active) return;
+    santaState.active = false;
+
+    if (santaState.rafId !== null) {
+      window.cancelAnimationFrame(santaState.rafId);
+      santaState.rafId = null;
+    }
+    if (santaState.resizeHandler) {
+      window.removeEventListener('resize', santaState.resizeHandler);
+      santaState.resizeHandler = null;
+    }
+    if (santaState.canvas) {
+      santaState.canvas.remove();
+      santaState.canvas = null;
+    }
+    if (santaState.stage) {
+      santaState.stage.remove();
+      santaState.stage = null;
+    }
+  }
+
+  function updateSantaEasterEgg(downs, total) {
+    const enabled = dataset('santaEasterEgg', 'false') === 'true';
+    const shouldActivate = enabled && total > 0 && downs === total;
+    if (shouldActivate) {
+      startSantaEasterEgg();
+    } else {
+      stopSantaEasterEgg();
+    }
+  }
+
   function updateTabTitleFromStats() {
     const downCountEl = document.getElementById('stat-down-val');
+    const totalCountEl = document.getElementById('stat-total-val');
     const liveDot = document.getElementById('live-dot');
     if (liveDot) liveDot.classList.remove('disconnected');
 
     if (downCountEl) {
       const downs = parseInt(downCountEl.textContent.trim(), 10) || 0;
+      const total = totalCountEl ? (parseInt(totalCountEl.textContent.trim(), 10) || 0) : 0;
       if (downs > 0) {
         document.title = formatMsg(dataset('tabDownFmt', '(%d) Argus — Sistemas Fora'), downs);
       } else {
         document.title = dataset('tabOk', 'Argus — Operacional');
       }
       updateDynamicFavicon(downs);
+      updateSantaEasterEgg(downs, total);
     }
   }
 
