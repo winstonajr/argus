@@ -102,12 +102,12 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "public, max-age=3600")
 	}
 
-	if match := r.Header.Get("If-None-Match"); match != "" && strings.Contains(match, a.etag) {
+	if etagMatches(r.Header.Get("If-None-Match"), a.etag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
 
-	if len(a.gzipped) > 0 && strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+	if len(a.gzipped) > 0 && acceptsGzip(r.Header.Get("Accept-Encoding")) {
 		w.Header().Set("Content-Encoding", "gzip")
 		_, _ = w.Write(a.gzipped)
 		return
@@ -125,9 +125,43 @@ func (s *Server) handleFavicon(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "image/x-icon")
 	w.Header().Set("ETag", a.etag)
 	w.Header().Set("Cache-Control", "public, max-age=86400")
-	if match := r.Header.Get("If-None-Match"); match != "" && strings.Contains(match, a.etag) {
+	if etagMatches(r.Header.Get("If-None-Match"), a.etag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
 	_, _ = w.Write(a.raw)
+}
+
+func etagMatches(headerVal, etag string) bool {
+	if headerVal == "" {
+		return false
+	}
+	for _, part := range strings.Split(headerVal, ",") {
+		tag := strings.TrimSpace(part)
+		if tag == "*" || tag == etag {
+			return true
+		}
+	}
+	return false
+}
+
+func acceptsGzip(headerVal string) bool {
+	for _, part := range strings.Split(headerVal, ",") {
+		fields := strings.Split(strings.TrimSpace(part), ";")
+		if len(fields) == 0 {
+			continue
+		}
+		enc := strings.TrimSpace(strings.ToLower(fields[0]))
+		if enc != "gzip" {
+			continue
+		}
+		for _, param := range fields[1:] {
+			p := strings.TrimSpace(strings.ToLower(param))
+			if p == "q=0" || p == "q=0.0" || p == "q=0.00" || p == "q=0.000" {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }

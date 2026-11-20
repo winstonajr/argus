@@ -41,7 +41,7 @@ type Server struct {
 	statusTmpl      *template.Template
 	iconsSVG        template.HTML
 	sseMu           sync.RWMutex
-	sseClients      map[chan sseEvent]struct{}
+	sseClients      map[chan sseEvent]string
 	triggerMu       sync.RWMutex
 	checkTrigger    func(string) bool
 	notifierMu      sync.RWMutex
@@ -62,7 +62,7 @@ func NewServer(cfg *config.Config, store *monitor.Store, db *storage.DB) (*Serve
 		store:           store,
 		storage:         db,
 		mux:             http.NewServeMux(),
-		sseClients:      make(map[chan sseEvent]struct{}),
+		sseClients:      make(map[chan sseEvent]string),
 		lastManualCheck: make(map[string]time.Time),
 	}
 
@@ -168,11 +168,12 @@ func (s *Server) withSecurityHeaders(next http.Handler) http.Handler {
 }
 
 func isPublicRoute(urlPath string) bool {
-	return urlPath == "/status" ||
-		urlPath == "/healthz" ||
-		urlPath == "/metrics" ||
-		urlPath == "/favicon.ico" ||
-		strings.HasPrefix(urlPath, "/static/")
+	cleanPath := path.Clean(urlPath)
+	return cleanPath == "/status" ||
+		cleanPath == "/healthz" ||
+		cleanPath == "/metrics" ||
+		cleanPath == "/favicon.ico" ||
+		strings.HasPrefix(cleanPath, "/static/")
 }
 
 func (s *Server) withAuth(next http.Handler) http.Handler {
@@ -194,6 +195,10 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 			return
 		}
 
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
 		w.Header().Set("WWW-Authenticate", `Basic realm="Argus NOC"`)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 	})

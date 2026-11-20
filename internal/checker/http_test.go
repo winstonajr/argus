@@ -295,3 +295,28 @@ func TestHTTPChecker_ExpectedDNS_JSONPath_And_ExpiredTLS(t *testing.T) {
 		t.Errorf("expected HasTLS=true and TLSDaysLeft < 0 for expired cert, got HasTLS=%v TLSDaysLeft=%d", resExpTLS.HasTLS, resExpTLS.TLSDaysLeft)
 	}
 }
+
+func TestHTTPChecker_HealthPathWithQueryAndLargeJSONNumber(t *testing.T) {
+	var gotPath, gotQuery string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotQuery = r.URL.RawQuery
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"count":1000000}`))
+	}))
+	defer ts.Close()
+
+	c := NewHTTPChecker()
+	res := c.Check(context.Background(), CheckOptions{
+		URL:        ts.URL + "/api?v=1",
+		HealthPath: "/healthz",
+		JSONPath:   "$.count == 1000000",
+		Timeout:    2 * time.Second,
+	})
+	if !res.OK {
+		t.Fatalf("expected OK=true, got error=%q", res.Error)
+	}
+	if gotPath != "/api/healthz" || gotQuery != "v=1" {
+		t.Errorf("expected path /api/healthz?v=1, got %s?%s", gotPath, gotQuery)
+	}
+}

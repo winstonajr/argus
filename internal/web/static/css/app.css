@@ -458,7 +458,7 @@ button, input {
   align-items: center;
   justify-content: space-between;
   padding-bottom: var(--sp-2);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--border);
 }
 
 .card__banner-status {
@@ -715,7 +715,7 @@ button, input {
   justify-content: space-between;
   font-size: 12px;
   color: var(--text-muted);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--border);
   padding-top: var(--sp-2);
   margin-top: auto;
 }
@@ -821,6 +821,7 @@ button, input {
 
 .history-topbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-4);
@@ -844,6 +845,7 @@ button, input {
 
 .history-title-group {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: var(--sp-3);
 }
@@ -981,6 +983,7 @@ button, input {
 
 .event-item {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   padding: var(--sp-2) var(--sp-3);
@@ -1422,7 +1425,7 @@ button, input {
     transition-duration: 0.01ms !important;
   }
   .card__progress-bar { display: none; }
-  .pill--down .dot::after {
+  .status-beacon--down::after {
     border-width: 2px;
     animation: none;
   }
@@ -1447,6 +1450,14 @@ button, input {
   }
   .cards-grid {
     grid-template-columns: 1fr;
+  }
+  .period-buttons {
+    flex-wrap: wrap;
+  }
+  .toast-container {
+    left: var(--sp-4);
+    right: var(--sp-4);
+    bottom: var(--sp-4);
   }
 }
 
@@ -1476,6 +1487,7 @@ html.view-compact .cards-grid {
 
 html.view-compact .cards-grid .card {
   flex-direction: row;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   padding: var(--sp-2) var(--sp-4);
@@ -1492,6 +1504,7 @@ html.view-compact .cards-grid .card__footer {
 html.view-compact .cards-grid .card__banner {
   min-width: 155px;
   padding: 4px 10px;
+  border-bottom: none;
 }
 
 html.view-compact .cards-grid .card__headline {
@@ -1533,9 +1546,9 @@ html.view-compact .cards-grid .card__telemetry {
   padding: 1px 6px;
   margin-right: 6px;
   border-radius: 999px;
-  background: rgba(245, 158, 11, 0.2);
+  background: var(--status-degraded-tint);
   color: var(--status-degraded);
-  border: 1px solid rgba(245, 158, 11, 0.4);
+  border: 1px solid var(--status-degraded);
 }
 
 /* ==========================================================================
@@ -1813,6 +1826,7 @@ html.view-compact .cards-grid .card__telemetry {
 
 .status-service-card__top {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-3);
@@ -1975,4 +1989,33 @@ html.view-compact .cards-grid .card__telemetry {
   50% {
     transform: translateY(-6px) rotate(1.5deg);
   }
+}
+
+.tv-exit-btn {
+  display: none;
+}
+
+.tv-mode .tv-exit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 350;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  opacity: 0.35;
+  transition: opacity var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.tv-mode .tv-exit-btn:hover,
+.tv-mode .tv-exit-btn:focus-visible {
+  opacity: 1;
+  color: var(--text);
 }

@@ -16,11 +16,17 @@ import (
 	"argus/internal/storage"
 )
 
+func writeJSONError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
 func (s *Server) handleAPISystem(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	snap, ok := s.store.GetSystem(id)
 	if !ok {
-		http.Error(w, `{"error":"system not found"}`, http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "system not found")
 		return
 	}
 
@@ -67,34 +73,46 @@ func (s *Server) handleAPICards(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAPIFailedChecks(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if _, ok := s.store.GetSystem(id); !ok {
-		http.Error(w, `{"error":"system not found"}`, http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "system not found")
 		return
 	}
 
 	t := s.messagesForRequest(w, r)
 	_, _, duration, _ := parsePeriod(r.URL.Query().Get("period"), t)
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-	if offset < 0 {
-		offset = 0
+	offset := 0
+	if offsetStr := strings.TrimSpace(r.URL.Query().Get("offset")); offsetStr != "" {
+		parsed, err := strconv.Atoi(offsetStr)
+		if err != nil || parsed < 0 {
+			writeJSONError(w, http.StatusBadRequest, "invalid offset")
+			return
+		}
+		offset = parsed
 	}
 
 	to := time.Now().UTC()
 	from := to.Add(-duration)
 
-	var items []failedCheckViewModel
+	items := make([]failedCheckViewModel, 0)
+	hasMore := false
 	if s.storage != nil {
-		failed, err := s.storage.ListFailedChecks(r.Context(), id, from, to, 50, offset)
-		if err == nil {
-			items = make([]failedCheckViewModel, len(failed))
-			for i, f := range failed {
-				items[i] = failedCheckViewModel{
-					Kind:               strings.ToUpper(f.Kind),
-					StatusCode:         f.StatusCode,
-					LatencyMs:          f.LatencyMs,
-					ErrorCat:           f.ErrorCat,
-					ErrorMsg:           f.ErrorMsg,
-					CheckedAtFormatted: f.CheckedAt.Local().Format("02/01 15:04:05"),
-				}
+		failed, err := s.storage.ListFailedChecks(r.Context(), id, from, to, 51, offset)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "failed to load failed checks")
+			return
+		}
+		if len(failed) > 50 {
+			hasMore = true
+			failed = failed[:50]
+		}
+		items = make([]failedCheckViewModel, len(failed))
+		for i, f := range failed {
+			items[i] = failedCheckViewModel{
+				Kind:               strings.ToUpper(f.Kind),
+				StatusCode:         f.StatusCode,
+				LatencyMs:          f.LatencyMs,
+				ErrorCat:           f.ErrorCat,
+				ErrorMsg:           f.ErrorMsg,
+				CheckedAtFormatted: f.CheckedAt.Local().Format("02/01 15:04:05"),
 			}
 		}
 	}
@@ -102,7 +120,7 @@ func (s *Server) handleAPIFailedChecks(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"items":    items,
-		"has_more": len(items) >= 50,
+		"has_more": hasMore,
 	})
 }
 
@@ -110,21 +128,32 @@ func (s *Server) handleToggleMaintenance(w http.ResponseWriter, r *http.Request)
 	id := r.PathValue("id")
 	snap, ok := s.store.GetSystem(id)
 	if !ok {
-		http.Error(w, `{"error":"system not found"}`, http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "system not found")
 		return
 	}
 
 	next := !snap.InMaintenance
-	if q := r.URL.Query().Get("enabled"); q != "" {
-		next = q == "true" || q == "1"
+	if q := strings.TrimSpace(r.URL.Query().Get("enabled")); q != "" {
+		switch strings.ToLower(q) {
+		case "true", "1":
+			next = true
+		case "false", "0":
+			next = false
+		default:
+			writeJSONError(w, http.StatusBadRequest, "invalid enabled parameter")
+			return
+		}
 	}
 
 	var until time.Time
 	if next {
-		if durStr := r.URL.Query().Get("duration"); durStr != "" {
-			if d, err := time.ParseDuration(durStr); err == nil && d > 0 {
-				until = time.Now().Add(d)
+		if durStr := strings.TrimSpace(r.URL.Query().Get("duration")); durStr != "" {
+			d, err := time.ParseDuration(durStr)
+			if err != nil || d <= 0 {
+				writeJSONError(w, http.StatusBadRequest, "invalid duration parameter")
+				return
 			}
+			until = time.Now().Add(d)
 		}
 	}
 
@@ -164,11 +193,18 @@ func (s *Server) handleTestAlert(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	s.manualCheckMu.Lock()
 	if !s.lastAlertTest.IsZero() && now.Sub(s.lastAlertTest) < alertTestCooldown {
+		remaining := alertTestCooldown - now.Sub(s.lastAlertTest)
+		retryAfter := int((remaining + time.Second - 1) / time.Second)
+		if retryAfter < 1 {
+			retryAfter = 1
+		}
 		s.manualCheckMu.Unlock()
+		w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 		w.WriteHeader(http.StatusTooManyRequests)
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"ok":    false,
-			"error": "rate limit exceeded",
+			"ok":                  false,
+			"error":               "rate limit exceeded",
+			"retry_after_seconds": retryAfter,
 		})
 		return
 	}
@@ -226,6 +262,7 @@ func (s *Server) handleTriggerCheck(w http.ResponseWriter, r *http.Request) {
 		}
 		s.manualCheckMu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 		w.WriteHeader(http.StatusTooManyRequests)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"error":               "rate limit exceeded",
@@ -252,13 +289,15 @@ func (s *Server) handleTriggerCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAPIEvents(w http.ResponseWriter, r *http.Request) {
-	var events []storage.StoredEvent
+	events := make([]storage.StoredEvent, 0)
 	if s.storage != nil {
-		var err error
-		events, err = s.storage.ListAllRecentEvents(r.Context(), 100)
+		loaded, err := s.storage.ListAllRecentEvents(r.Context(), 100)
 		if err != nil {
-			http.Error(w, `{"error":"failed to load events"}`, http.StatusInternalServerError)
+			writeJSONError(w, http.StatusInternalServerError, "failed to load events")
 			return
+		}
+		if loaded != nil {
+			events = loaded
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")

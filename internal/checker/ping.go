@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"syscall"
 	"time"
 
 	"argus/internal/i18n"
@@ -39,6 +40,14 @@ func (p *PingChecker) CheckICMP(ctx context.Context, ipStr string, timeout time.
 
 	pinger.Count = 3
 	pinger.Timeout = timeout
+	interval := time.Second
+	if timeout > 0 && timeout < 3*time.Second {
+		interval = timeout / 4
+		if interval < 200*time.Millisecond {
+			interval = 200 * time.Millisecond
+		}
+	}
+	pinger.Interval = interval
 	pinger.SetPrivileged(true)
 
 	// Run pinger with context cancellation support
@@ -50,6 +59,7 @@ func (p *PingChecker) CheckICMP(ctx context.Context, ipStr string, timeout time.
 	select {
 	case <-ctx.Done():
 		pinger.Stop()
+		<-done
 		return Result{
 			OK:        false,
 			Loss:      100,
@@ -130,7 +140,7 @@ func (p *PingChecker) CheckTCP(ctx context.Context, ipStr string, port int, time
 	latency := time.Since(start)
 
 	if err != nil {
-		if strings.Contains(err.Error(), "connection refused") {
+		if errors.Is(err, syscall.ECONNREFUSED) || strings.Contains(err.Error(), "connection refused") {
 			return Result{
 				OK:        false,
 				Latency:   latency,

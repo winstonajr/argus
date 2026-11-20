@@ -28,6 +28,10 @@ func TestEnv_ExpandEnv(t *testing.T) {
 			expected: "https://app.example.com/live",
 		},
 		{
+			input:    "https://${UNDEFINED_HOST}/keep-literal",
+			expected: "https://${UNDEFINED_HOST}/keep-literal",
+		},
+		{
 			input:    "plain string without env",
 			expected: "plain string without env",
 		},

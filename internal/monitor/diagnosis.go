@@ -66,10 +66,17 @@ func Diagnose(dns *CheckSnapshot, ip *CheckSnapshot) (summary string, detail str
 		return i18n.Pick("Aplicação fora", "Application down"), dns.LastResult.Error
 	}
 
+	if dnsFailing && dns.LastResult.ErrorCat == checker.CatUnexpectedStatus {
+		return i18n.Pick("Status HTTP inesperado", "Unexpected HTTP status"), dns.LastResult.Error
+	}
+
 	if dns != nil && dns.Configured && (dns.LastResult.ErrorCat == checker.CatConnect || dns.LastResult.ErrorCat == checker.CatTimeout) {
 		if ipAlive {
 			return i18n.Pick("Serviço não responde", "Service unresponsive"),
 				i18n.Pickf("Serviço HTTP indisponível (%s), mas VM responde ao ping", "HTTP service unavailable (%s), but VM responds to ping", dns.LastResult.Error)
+		}
+		if dnsFailing && (ip == nil || !ip.Configured) {
+			return i18n.Pick("Serviço não responde", "Service unresponsive"), dns.LastResult.Error
 		}
 	}
 
@@ -79,8 +86,17 @@ func Diagnose(dns *CheckSnapshot, ip *CheckSnapshot) (summary string, detail str
 	}
 
 	if ipFailing && (dns == nil || !dns.Configured) {
-		if ip.LastResult.ErrorCat == checker.CatTCPRefused {
+		switch ip.LastResult.ErrorCat {
+		case checker.CatTCPRefused:
 			return i18n.Pick("Porta TCP recusada", "TCP port refused"), ip.LastResult.Error
+		case checker.CatHTTP5xx, checker.CatProxy:
+			return i18n.Pick("Aplicação fora", "Application down"), ip.LastResult.Error
+		case checker.CatUnexpectedStatus:
+			return i18n.Pick("Status HTTP inesperado", "Unexpected HTTP status"), ip.LastResult.Error
+		case checker.CatUnexpectedBody:
+			return i18n.Pick("Conteúdo inesperado", "Unexpected response body"), ip.LastResult.Error
+		case checker.CatTLS:
+			return i18n.Pick("Certificado TLS inválido", "Invalid TLS certificate"), ip.LastResult.Error
 		}
 		return i18n.Pick("VM ou rede fora", "VM or network down"),
 			i18n.Pickf("Host inalcançável: %s", "Host unreachable: %s", ip.LastResult.Error)

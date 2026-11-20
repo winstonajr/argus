@@ -51,6 +51,7 @@ type Messages struct {
 	RefusedUpper            string
 	TimeoutUpper            string
 	RecentHistoryAria       string
+	HeartbeatSummaryFmt     string
 	LatencyTrendAria        string
 	LastCheck               string
 	TLSCertValidity         string
@@ -169,6 +170,7 @@ var ptBR = Messages{
 	RefusedUpper:            "RECUSADO",
 	TimeoutUpper:            "TIMEOUT",
 	RecentHistoryAria:       "Histórico recente",
+	HeartbeatSummaryFmt:     "%s: %d de %d verificações operacionais",
 	LatencyTrendAria:        "Tendência de latência",
 	LastCheck:               "Última consulta",
 	TLSCertValidity:         "Validade do certificado TLS",
@@ -287,6 +289,7 @@ var enUS = Messages{
 	RefusedUpper:            "REFUSED",
 	TimeoutUpper:            "TIMEOUT",
 	RecentHistoryAria:       "Recent history",
+	HeartbeatSummaryFmt:     "%s: %d of %d checks operational",
 	LatencyTrendAria:        "Latency trend",
 	LastCheck:               "Last check",
 	TLSCertValidity:         "TLS certificate validity",

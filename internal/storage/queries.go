@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"time"
 
 	"argus/internal/checker"
@@ -331,7 +332,10 @@ GROUP BY d_idx
 
 // GetSystemUptimeStats calculates DNS and IP uptime percentage and incident counts in range.
 func (d *DB) GetSystemUptimeStats(ctx context.Context, sysID string, from, to time.Time) (SystemHistoryStats, error) {
-	events, _ := d.ListEvents(ctx, sysID, from, to, 500)
+	events, err := d.ListEvents(ctx, sysID, from, to, 1000)
+	if err != nil {
+		return SystemHistoryStats{}, err
+	}
 	return d.GetSystemUptimeStatsWithEvents(ctx, sysID, from, to, events)
 }
 
@@ -391,6 +395,9 @@ GROUP BY kind
 			totalOKLatSum += sumLat
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return stats, fmt.Errorf("iterate uptime rows: %w", err)
+	}
 	if totalOKCount > 0 {
 		stats.AvgLatencyMs = totalOKLatSum / totalOKCount
 	}
@@ -406,26 +413,34 @@ WHERE system_id = ? AND to_status = 'DOWN' AND occurred_at_ms >= ? AND occurred_
 	}
 
 	var rawOKCount int64
-	_ = d.db.QueryRowContext(ctx, `
+	if err := d.db.QueryRowContext(ctx, `
 SELECT COUNT(*)
 FROM checks
 WHERE system_id = ? AND ok = 1 AND checked_at_ms >= ? AND checked_at_ms <= ?
-`, sysID, fromMs, toMs).Scan(&rawOKCount)
+`, sysID, fromMs, toMs).Scan(&rawOKCount); err != nil && err != sql.ErrNoRows {
+		return stats, fmt.Errorf("count ok checks for p95: %w", err)
+	}
 
 	if rawOKCount > 0 {
 		p95Offset := int64(float64(rawOKCount-1) * 0.95)
-		_ = d.db.QueryRowContext(ctx, `
+		if err := d.db.QueryRowContext(ctx, `
 SELECT COALESCE(latency_ms, 0)
 FROM checks
 WHERE system_id = ? AND ok = 1 AND checked_at_ms >= ? AND checked_at_ms <= ?
 ORDER BY latency_ms ASC
 LIMIT 1 OFFSET ?
-`, sysID, fromMs, toMs, p95Offset).Scan(&stats.P95LatencyMs)
+`, sysID, fromMs, toMs, p95Offset).Scan(&stats.P95LatencyMs); err != nil && err != sql.ErrNoRows {
+			return stats, fmt.Errorf("query p95 latency: %w", err)
+		}
 	}
 
 	if len(events) > 0 {
 		var totalDown time.Duration
 		var resolvedCount int
+		type downWindow struct {
+			start, end time.Time
+		}
+		var windows []downWindow
 		for _, ev := range events {
 			if ev.Duration > 0 {
 				totalDown += ev.Duration
@@ -433,14 +448,39 @@ LIMIT 1 OFFSET ?
 				if ev.Duration > stats.MaxDownDuration {
 					stats.MaxDownDuration = ev.Duration
 				}
+				if !ev.OccurredAt.IsZero() {
+					windows = append(windows, downWindow{
+						start: ev.OccurredAt.Add(-ev.Duration),
+						end:   ev.OccurredAt,
+					})
+				}
 			}
 		}
 		if resolvedCount > 0 {
 			stats.MTTR = totalDown / time.Duration(resolvedCount)
 		}
 		if stats.IncidentCount > 0 {
+			mergedDown := totalDown
+			if len(windows) > 0 {
+				sort.Slice(windows, func(i, j int) bool {
+					return windows[i].start.Before(windows[j].start)
+				})
+				mergedDown = 0
+				curStart, curEnd := windows[0].start, windows[0].end
+				for _, w := range windows[1:] {
+					if !w.start.After(curEnd) {
+						if w.end.After(curEnd) {
+							curEnd = w.end
+						}
+					} else {
+						mergedDown += curEnd.Sub(curStart)
+						curStart, curEnd = w.start, w.end
+					}
+				}
+				mergedDown += curEnd.Sub(curStart)
+			}
 			periodDur := to.Sub(from)
-			upTime := periodDur - totalDown
+			upTime := periodDur - mergedDown
 			if upTime > 0 {
 				stats.MTBF = upTime / time.Duration(stats.IncidentCount)
 			}
@@ -697,7 +737,7 @@ ON CONFLICT(system_id) DO UPDATE SET
 }
 
 // GetMaintenanceOverrides loads all persisted maintenance overrides keyed by system ID.
-func (d *DB) GetMaintenanceOverrides(ctx context.Context) (map[string]bool, error) {
+func (d *DB) GetMaintenanceOverrides(ctx context.Context) (map[string]MaintenanceOverride, error) {
 	rows, err := d.db.QueryContext(ctx, `SELECT system_id, enabled, COALESCE(until_ms, 0) FROM maintenance_overrides`)
 	if err != nil {
 		return nil, fmt.Errorf("query maintenance overrides: %w", err)
@@ -705,7 +745,7 @@ func (d *DB) GetMaintenanceOverrides(ctx context.Context) (map[string]bool, erro
 	defer rows.Close()
 
 	nowMs := time.Now().UTC().UnixMilli()
-	overrides := make(map[string]bool)
+	overrides := make(map[string]MaintenanceOverride)
 	for rows.Next() {
 		var sysID string
 		var enabledInt int
@@ -713,11 +753,15 @@ func (d *DB) GetMaintenanceOverrides(ctx context.Context) (map[string]bool, erro
 		if err := rows.Scan(&sysID, &enabledInt, &untilMs); err != nil {
 			return nil, fmt.Errorf("scan maintenance override: %w", err)
 		}
-		enabled := enabledInt == 1
-		if enabled && untilMs > 0 && nowMs >= untilMs {
-			enabled = false
+		ov := MaintenanceOverride{Enabled: enabledInt == 1}
+		if ov.Enabled && untilMs > 0 {
+			if nowMs >= untilMs {
+				ov.Enabled = false
+			} else {
+				ov.Until = time.UnixMilli(untilMs)
+			}
 		}
-		overrides[sysID] = enabled
+		overrides[sysID] = ov
 	}
 	return overrides, rows.Err()
 }

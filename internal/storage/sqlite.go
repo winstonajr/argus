@@ -59,8 +59,13 @@ func Open(path string, retentionChecks, retentionEvents time.Duration) (*DB, err
 		return nil, fmt.Errorf("open sqlite %q: %w", path, err)
 	}
 
-	sqlDB.SetMaxOpenConns(5)
-	sqlDB.SetMaxIdleConns(2)
+	if path == ":memory:" {
+		sqlDB.SetMaxOpenConns(1)
+		sqlDB.SetMaxIdleConns(1)
+	} else {
+		sqlDB.SetMaxOpenConns(5)
+		sqlDB.SetMaxIdleConns(2)
+	}
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	if err := initAndMigrateSchema(sqlDB, path); err != nil {
@@ -528,18 +533,18 @@ func (d *DB) PurgeOldRecords() error {
 		); err != nil {
 			return fmt.Errorf("purge events: %w", err)
 		}
-		if _, err := d.db.Exec(`DELETE FROM checks_hourly WHERE hour_ms < ?`, cutoffMs); err != nil {
+		if _, err := d.db.ExecContext(d.ctx, `DELETE FROM checks_hourly WHERE hour_ms < ?`, cutoffMs); err != nil {
 			return fmt.Errorf("purge checks_hourly: %w", err)
 		}
 	}
 
-	_, _ = d.db.Exec(`PRAGMA optimize`)
+	_, _ = d.db.ExecContext(d.ctx, `PRAGMA optimize`)
 	return nil
 }
 
 func (d *DB) deleteInBatches(query string, cutoffMs int64) error {
 	for i := 0; i < 100; i++ {
-		res, err := d.db.Exec(query, cutoffMs)
+		res, err := d.db.ExecContext(d.ctx, query, cutoffMs)
 		if err != nil {
 			return err
 		}

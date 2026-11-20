@@ -95,8 +95,8 @@ func main() {
 		}
 	}
 	if overrides, err := db.GetMaintenanceOverrides(hydrateCtx); err == nil {
-		for sysID, enabled := range overrides {
-			store.SetMaintenance(sysID, enabled)
+		for sysID, ov := range overrides {
+			store.SetMaintenanceUntil(sysID, ov.Enabled, ov.Until)
 		}
 	}
 	hydrateCancel()
@@ -135,6 +135,9 @@ func main() {
 	webServer, err := web.NewServer(cfg, store, db)
 	if err != nil {
 		slog.Error("erro ao inicializar servidor web", "err", err)
+		rootCancel()
+		scheduler.Stop()
+		_ = db.Close()
 		os.Exit(1)
 	}
 	webServer.SetCheckTrigger(scheduler.CheckNow)
@@ -180,13 +183,18 @@ func main() {
 			slog.Warn("falha ao recarregar configuração (mantendo atual)", "err", reloadErr)
 			return
 		}
+		if newCfg.Server.Timezone != "" {
+			if loc, locErr := time.LoadLocation(newCfg.Server.Timezone); locErr == nil {
+				time.Local = loc
+			}
+		}
 		rootCancel()
 		scheduler.Stop()
 		store.ReloadConfig(newCfg)
 		ovCtx, ovCancel := context.WithTimeout(context.Background(), 2*time.Second)
 		if overrides, err := db.GetMaintenanceOverrides(ovCtx); err == nil {
-			for sysID, enabled := range overrides {
-				store.SetMaintenance(sysID, enabled)
+			for sysID, ov := range overrides {
+				store.SetMaintenanceUntil(sysID, ov.Enabled, ov.Until)
 			}
 		}
 		ovCancel()
@@ -198,6 +206,8 @@ func main() {
 		webServer.SetCheckTrigger(scheduler.CheckNow)
 		slog.Info("configuração recarregada", "systems", len(newCfg.Systems))
 	}
+
+	exitCode := 0
 
 loop:
 	for {
@@ -226,7 +236,8 @@ loop:
 			reloadConfig("Alteração detectada no arquivo de configuração")
 		case err := <-serverErrCh:
 			slog.Error("erro fatal no servidor HTTP", "err", err)
-			os.Exit(1)
+			exitCode = 1
+			break loop
 		}
 	}
 
@@ -239,6 +250,7 @@ loop:
 	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
 		slog.Warn("erro no shutdown do servidor HTTP", "err", err)
 	}
+	notifier.Close(shutdownCtx)
 
 	slog.Info("gravando pendências e fechando banco SQLite")
 	if err := db.Close(); err != nil {
@@ -246,4 +258,7 @@ loop:
 	}
 
 	slog.Info("Argus finalizado com sucesso")
+	if exitCode != 0 {
+		os.Exit(exitCode)
+	}
 }

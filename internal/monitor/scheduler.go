@@ -105,7 +105,14 @@ func (s *Scheduler) CheckNow(sysID string) bool {
 	s.wg.Add(1)
 	go func(sys config.SystemConfig) {
 		defer s.wg.Done()
-		ctx, cancel := context.WithTimeout(baseCtx, 15*time.Second)
+		checkTimeout := 15 * time.Second
+		if sys.HTTPTimeout > checkTimeout {
+			checkTimeout = sys.HTTPTimeout + 2*time.Second
+		}
+		if sys.PingTimeout > checkTimeout {
+			checkTimeout = sys.PingTimeout + 2*time.Second
+		}
+		ctx, cancel := context.WithTimeout(baseCtx, checkTimeout)
 		defer cancel()
 
 		var checkWg sync.WaitGroup
@@ -221,9 +228,14 @@ func (s *Scheduler) fallbackTCP(ctx context.Context, ip string, timeout time.Dur
 		close(resCh)
 	}()
 
+	var firstResult checker.Result
+	var found bool
 	for r := range resCh {
-		cancel()
-		return r, true
+		if !found {
+			firstResult = r
+			found = true
+			cancel()
+		}
 	}
-	return checker.Result{}, false
+	return firstResult, found
 }

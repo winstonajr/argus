@@ -16,6 +16,12 @@ type StoredCheck struct {
 	CheckedAt  time.Time `json:"checked_at"`
 }
 
+// MaintenanceOverride is a persisted manual maintenance state; Until is zero when it has no expiration.
+type MaintenanceOverride struct {
+	Enabled bool
+	Until   time.Time
+}
+
 // StoredEvent represents a recorded status transition with diagnosis.
 type StoredEvent struct {
 	ID         int64         `json:"id"`

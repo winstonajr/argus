@@ -66,6 +66,23 @@ func (cs *checkState) pushResult(res checker.Result) {
 	cs.lastResult = res
 }
 
+func (cs *checkState) resize(newCap int) {
+	if newCap < defaultRingBufferSize {
+		newCap = defaultRingBufferSize
+	}
+	oldCap := len(cs.history)
+	if newCap <= oldCap {
+		return
+	}
+	newBuf := make([]checker.Result, newCap)
+	start := (cs.historyHead - cs.historyCount + oldCap) % oldCap
+	for i := 0; i < cs.historyCount; i++ {
+		newBuf[i] = cs.history[(start+i)%oldCap]
+	}
+	cs.history = newBuf
+	cs.historyHead = cs.historyCount
+}
+
 func (cs *checkState) uptime(now time.Time) float64 {
 	if cs.historyCount == 0 {
 		return 100.0
@@ -219,10 +236,12 @@ func (s *Store) ReloadConfig(cfg *config.Config) {
 			existing.dns.failThreshold = failThresh
 			existing.dns.degradedLatency = degLat
 			existing.dns.tlsWarnDays = tlsWarnDays
+			existing.dns.resize(ringSize)
 			existing.ip.configured = hasIP
 			existing.ip.failThreshold = failThresh
 			existing.ip.degradedLatency = degLat
 			existing.ip.tlsWarnDays = tlsWarnDays
+			existing.ip.resize(ringSize)
 			newSystems[sys.ID] = existing
 		} else {
 			newSystems[sys.ID] = &systemState{
@@ -337,8 +356,12 @@ func (s *Store) recordResult(sysID string, kind string, res checker.Result) {
 		return
 	}
 
-	s.lastCheckTime = res.CheckedAt
-	sys.lastRun = res.CheckedAt
+	if res.CheckedAt.After(s.lastCheckTime) {
+		s.lastCheckTime = res.CheckedAt
+	}
+	if res.CheckedAt.After(sys.lastRun) {
+		sys.lastRun = res.CheckedAt
+	}
 
 	var target *checkState
 	if kind == "dns" {

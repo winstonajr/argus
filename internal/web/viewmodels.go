@@ -146,11 +146,7 @@ func toCardViewModelWithLang(snap monitor.SystemSnapshot, t i18n.Messages) cardV
 
 	hbSummary := t.RecentHistoryAria
 	if totalDataTicks > 0 {
-		if t.Lang == i18n.LangEN {
-			hbSummary = fmt.Sprintf("%s: %d of %d checks operational", t.RecentHistoryAria, okTicks, totalDataTicks)
-		} else {
-			hbSummary = fmt.Sprintf("%s: %d de %d verificações operacionais", t.RecentHistoryAria, okTicks, totalDataTicks)
-		}
+		hbSummary = fmt.Sprintf(t.HeartbeatSummaryFmt, t.RecentHistoryAria, okTicks, totalDataTicks)
 	}
 
 	downDurStr := ""

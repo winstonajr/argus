@@ -73,6 +73,7 @@ Configuration precedence: **Environment Variables > YAML File > Built-in Default
 |---|---|---|
 | `ARGUS_SERVER_ADDR` | `:8080` | HTTP listen address and port (or `PORT=8080`) |
 | `ARGUS_LANG` | `pt-BR` | UI, diagnosis, and alert language (`pt-BR` or `en`) |
+| `ARGUS_TIMEZONE` | System local (`TZ`) | IANA timezone for displayed timestamps (e.g. `America/Sao_Paulo`, `UTC`; YAML: `server.timezone`) |
 | `ARGUS_SANTA_EASTER_EGG` | `false` | Enables snow and Santa sleigh with 9 reindeer when all systems are `DOWN` (YAML: `server.santa_easter_egg`) |
 | `ARGUS_SERVER_AUTH_USERNAME` | `admin` | Basic Auth username (active when password is set) |
 | `ARGUS_SERVER_AUTH_PASSWORD` | — | Basic Auth password (protects UI/API; `/status`, `/healthz`, `/metrics` remain public) |
@@ -95,7 +96,7 @@ Configuration precedence: **Environment Variables > YAML File > Built-in Default
 | `ARGUS_ALERTS_TELEGRAM_BOT_TOKEN` | — | Telegram Bot Token |
 | `ARGUS_ALERTS_TELEGRAM_CHAT_ID` | — | Telegram chat/group ID |
 | `ARGUS_ALERTS_EMAIL_SMTP_HOST` | — | SMTP server host |
-| `ARGUS_ALERTS_EMAIL_SMTP_PORT` | `587` | SMTP server port |
+| `ARGUS_ALERTS_EMAIL_SMTP_PORT` | `587` | SMTP server port (`587` STARTTLS, `465` implicit TLS) |
 | `ARGUS_ALERTS_EMAIL_USERNAME` | — | SMTP username |
 | `ARGUS_ALERTS_EMAIL_PASSWORD` | — | SMTP password |
 | `ARGUS_ALERTS_EMAIL_FROM` | — | Alert sender email address |

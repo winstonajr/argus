@@ -63,7 +63,7 @@ func ExpandEnv(content string) string {
 			if val, ok := os.LookupEnv(varName); ok && val != "" {
 				return val
 			}
-			if len(sub) >= 3 {
+			if strings.Contains(match, ":-") && len(sub) >= 3 {
 				return sub[2]
 			}
 		}

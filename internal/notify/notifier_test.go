@@ -249,3 +249,72 @@ func TestNotifier_SanitizeHeader(t *testing.T) {
 		t.Errorf("sanitizeHeader did not strip CR/LF: %q", clean)
 	}
 }
+
+func TestNotifier_DegradedCooldownDoesNotSuppressDownAndMaintenanceClearsDownSince(t *testing.T) {
+	var mu sync.Mutex
+	var events []string
+	done := make(chan struct{}, 4)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		events = append(events, r.Method)
+		mu.Unlock()
+		done <- struct{}{}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	n := New(config.AlertsConfig{
+		Cooldown:         time.Hour,
+		NotifyOnDegraded: true,
+		Webhook:          config.WebhookAlertConfig{URL: srv.URL},
+	})
+
+	n.HandleEvent(monitor.ChangeEvent{
+		SystemID:   "api",
+		SystemName: "API",
+		Kind:       "dns",
+		FromStatus: monitor.StatusUP,
+		ToStatus:   monitor.StatusDegraded,
+		OccurredAt: time.Now(),
+	})
+	<-done
+
+	n.HandleEvent(monitor.ChangeEvent{
+		SystemID:   "api",
+		SystemName: "API",
+		Kind:       "dns",
+		FromStatus: monitor.StatusDegraded,
+		ToStatus:   monitor.StatusDown,
+		OccurredAt: time.Now(),
+	})
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("expected DOWN alert not to be suppressed by DEGRADED cooldown")
+	}
+
+	n.HandleEvent(monitor.ChangeEvent{
+		SystemID:      "api",
+		SystemName:    "API",
+		Kind:          "dns",
+		FromStatus:    monitor.StatusDown,
+		ToStatus:      monitor.StatusUP,
+		InMaintenance: true,
+		OccurredAt:    time.Now(),
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	n.Close(ctx)
+
+	n.mu.Lock()
+	_, stillDown := n.downSince["api:dns"]
+	n.mu.Unlock()
+	if stillDown {
+		t.Errorf("expected downSince to be cleared when recovering to UP during maintenance")
+	}
+	if len(events) != 2 {
+		t.Errorf("expected 2 webhook calls (DEGRADED and DOWN), got %d", len(events))
+	}
+}

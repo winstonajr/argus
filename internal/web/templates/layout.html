@@ -8,7 +8,7 @@
   <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="apple-touch-icon" sizes="180x180" href="{{asset "apple-touch-icon.png"}}">
   <link rel="manifest" href="{{asset "manifest.json"}}">
-  <meta name="theme-color" content="#0E131A">
+  <meta name="theme-color" content="#0E1013">
   <script src="{{asset "js/init.js"}}"></script>
   <link rel="stylesheet" href="{{asset "css/tokens.css"}}">
   <link rel="stylesheet" href="{{asset "css/app.css"}}">
@@ -49,7 +49,7 @@
     <div class="header__center">
       <div class="search-box">
         <svg class="icon" aria-hidden="true"><use href="#icon-search"></use></svg>
-        <input type="text" id="search-input" placeholder="{{.T.SearchPlaceholder}}" autocomplete="off">
+        <input type="text" id="search-input" placeholder="{{.T.SearchPlaceholder}}" aria-label="{{.T.SearchPlaceholder}}" autocomplete="off">
         <span class="kbd">/</span>
       </div>
 
@@ -125,7 +125,7 @@
         {{if eq .T.Lang "en"}}EN{{else}}PT{{end}}
       </button>
 
-      <button type="button" class="btn-icon" id="theme-toggle-btn" title="{{.T.ThemeToggleTitle}}" aria-label="{{.T.ThemeToggleTitle}}">
+      <button type="button" class="btn-icon" id="theme-toggle-btn" title="{{.T.ThemeToggleTitle}}" aria-label="{{.T.ThemeToggleTitle}}" aria-pressed="false">
         <svg class="icon" aria-hidden="true"><use href="#icon-moon"></use></svg>
       </button>
     </div>
@@ -136,6 +136,11 @@
   <div id="toast-container" class="toast-container" role="status" aria-live="polite"></div>
 
   {{if not .HideNOCControls}}
+  <button type="button" id="tv-exit-btn" class="tv-exit-btn" title="{{.T.TVModeTitle}}" aria-label="{{.T.TVModeTitle}}">
+    <svg class="icon" aria-hidden="true"><use href="#icon-tv"></use></svg>
+    <span>ESC / V</span>
+  </button>
+
   <div id="shortcuts-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="shortcuts-modal-title" hidden>
     <div class="modal-card">
       <div class="modal-card__header">

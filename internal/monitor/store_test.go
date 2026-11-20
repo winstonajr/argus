@@ -422,3 +422,34 @@ func TestStore_RingBufferCoversFullHourAt10s(t *testing.T) {
 		t.Errorf("expected Uptime1h around 99.72%% (359/360 retained in ring buffer), got %.4f%%", snap.Uptime1h)
 	}
 }
+
+func TestStore_TimedMaintenanceReappliedAfterReload(t *testing.T) {
+	cfg := &config.Config{
+		Defaults: config.DefaultsConfig{Interval: 10 * time.Second, FailThreshold: 1},
+		Systems:  []config.SystemConfig{{ID: "sys", Name: "Sys", URL: "https://sys.local"}},
+	}
+	store := NewStore(cfg)
+	until := time.Now().Add(time.Hour)
+
+	store.ReloadConfig(cfg)
+	if !store.SetMaintenanceUntil("sys", true, until) {
+		t.Fatalf("expected SetMaintenanceUntil to succeed")
+	}
+	snap, _ := store.GetSystem("sys")
+	if !snap.InMaintenance {
+		t.Fatalf("expected system in maintenance before expiration")
+	}
+
+	store.mu.RLock()
+	gotUntil := store.systems["sys"].maintenanceUntil
+	store.mu.RUnlock()
+	if !gotUntil.Equal(until) {
+		t.Errorf("expected maintenanceUntil %v, got %v", until, gotUntil)
+	}
+
+	store.SetMaintenanceUntil("sys", true, time.Now().Add(-time.Second))
+	snap, _ = store.GetSystem("sys")
+	if snap.InMaintenance {
+		t.Errorf("expected expired timed maintenance to be inactive")
+	}
+}

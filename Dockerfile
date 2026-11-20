@@ -24,10 +24,10 @@ COPY --from=builder /bin/argus /app/argus
 COPY config.example.yaml /app/config.yaml
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 
-RUN setcap cap_net_raw+ep /app/argus \
-    && chmod +x /app/docker-entrypoint.sh \
+RUN chmod +x /app/docker-entrypoint.sh \
     && mkdir -p /app/data \
-    && chown -R argus:argus /app
+    && chown -R argus:argus /app \
+    && setcap cap_net_raw+ep /app/argus
 
 ENV ARGUS_LANG=pt-BR
 
@@ -35,7 +35,7 @@ EXPOSE 8080
 VOLUME ["/app/data"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:8080/healthz || exit 1
+  CMD wget -q --spider http://127.0.0.1:8080/healthz || exit 1
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["-config", "/app/config.yaml"]

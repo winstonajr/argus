@@ -37,8 +37,14 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Run go vet and tests
+      - name: Run gofmt, go vet and tests
         run: |
+          UNFORMATTED=$(gofmt -l .)
+          if [ -n "$UNFORMATTED" ]; then
+            echo "Files not formatted with gofmt:"
+            echo "$UNFORMATTED"
+            exit 1
+          fi
           go vet ./...
           go test -race -count=1 ./...
 
@@ -103,5 +109,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.auto_tag.outputs.new_tag || inputs.tag || steps.meta.outputs.version || 'dev' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

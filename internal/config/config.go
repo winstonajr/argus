@@ -268,6 +268,18 @@ func (c *Config) Validate() error {
 	if c.Defaults.FailThreshold < 1 {
 		return errors.New("defaults.fail_threshold must be >= 1")
 	}
+	if c.Defaults.DegradedLatency < 0 {
+		return errors.New("defaults.degraded_latency cannot be negative")
+	}
+	if c.Defaults.TLSWarnDays < 0 {
+		return errors.New("defaults.tls_warn_days cannot be negative")
+	}
+	if c.Alerts.Cooldown < 0 {
+		return errors.New("alerts.cooldown cannot be negative")
+	}
+	if c.Storage.RetentionChecks < 0 || c.Storage.RetentionEvents < 0 {
+		return errors.New("storage retention durations cannot be negative")
+	}
 
 	if len(c.Systems) == 0 {
 		return errors.New("at least one system must be configured in systems list")
@@ -315,7 +327,7 @@ func (c *Config) Validate() error {
 
 		if sys.URL != "" {
 			u, err := url.ParseRequestURI(sys.URL)
-			if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 				return fmt.Errorf("system %q has invalid url %q (must be http:// or https://)", sys.ID, sys.URL)
 			}
 		}
@@ -372,8 +384,14 @@ func (c *Config) Validate() error {
 			}
 		}
 
+		if sys.Interval < 0 {
+			return fmt.Errorf("system %q interval cannot be negative", sys.ID)
+		}
 		if sys.Interval > 0 && sys.Interval < 10*time.Second {
 			return fmt.Errorf("system %q interval %v must be at least 10s", sys.ID, sys.Interval)
+		}
+		if sys.HTTPTimeout < 0 || sys.PingTimeout < 0 || sys.TLSWarnDays < 0 {
+			return fmt.Errorf("system %q timeouts and tls_warn_days cannot be negative", sys.ID)
 		}
 
 		if sys.FailThreshold < 0 {

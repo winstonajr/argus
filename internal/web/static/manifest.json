@@ -4,19 +4,26 @@
   "description": "Monitoramento em tempo real de disponibilidade, latência e infraestrutura.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0E131A",
-  "theme_color": "#0E131A",
+  "background_color": "#0E1013",
+  "theme_color": "#0E1013",
   "icons": [
     {
       "src": "/static/apple-touch-icon.png",
       "sizes": "180x180",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "/static/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

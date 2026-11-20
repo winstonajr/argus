@@ -153,7 +153,7 @@ func TestStorage_SQLiteFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMaintenanceOverrides failed: %v", err)
 	}
-	if !overrides["sys-1"] {
+	if !overrides["sys-1"].Enabled {
 		t.Errorf("expected sys-1 maintenance override to be true, got %+v", overrides)
 	}
 
@@ -164,7 +164,7 @@ func TestStorage_SQLiteFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMaintenanceOverrides failed: %v", err)
 	}
-	if val, ok := overrides["sys-1"]; !ok || val {
+	if val, ok := overrides["sys-1"]; !ok || val.Enabled {
 		t.Errorf("expected sys-1 maintenance override to be false, got %+v", overrides)
 	}
 }
@@ -307,5 +307,48 @@ CREATE TABLE maintenance_overrides (
 	}
 	if !hasDataBucket {
 		t.Errorf("expected at least one 30d timeline bucket with HasData=true and DNSStatus=DOWN from rollup")
+	}
+}
+
+func TestStorage_TimedMaintenanceSurvivesReopen(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "maint.db")
+	ctx := context.Background()
+
+	db, err := Open(dbPath, 24*time.Hour, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	until := time.Now().Add(time.Hour).Truncate(time.Millisecond)
+	if err := db.SetMaintenanceOverrideUntil(ctx, "timed", true, until); err != nil {
+		t.Fatalf("SetMaintenanceOverrideUntil(timed): %v", err)
+	}
+	if err := db.SetMaintenanceOverrideUntil(ctx, "expired", true, time.Now().Add(-time.Minute)); err != nil {
+		t.Fatalf("SetMaintenanceOverrideUntil(expired): %v", err)
+	}
+	if err := db.SetMaintenanceOverride(ctx, "forever", true); err != nil {
+		t.Fatalf("SetMaintenanceOverride(forever): %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	db, err = Open(dbPath, 24*time.Hour, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer db.Close()
+
+	overrides, err := db.GetMaintenanceOverrides(ctx)
+	if err != nil {
+		t.Fatalf("GetMaintenanceOverrides: %v", err)
+	}
+	if ov := overrides["timed"]; !ov.Enabled || !ov.Until.Equal(until) {
+		t.Errorf("timed override: want enabled until %v, got %+v", until, ov)
+	}
+	if ov := overrides["expired"]; ov.Enabled || !ov.Until.IsZero() {
+		t.Errorf("expired override: want disabled, got %+v", ov)
+	}
+	if ov := overrides["forever"]; !ov.Enabled || !ov.Until.IsZero() {
+		t.Errorf("forever override: want enabled without expiration, got %+v", ov)
 	}
 }

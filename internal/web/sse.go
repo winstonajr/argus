@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"argus/internal/i18n"
 )
 
 type sseEvent struct {
@@ -14,6 +16,12 @@ type sseEvent struct {
 }
 
 func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodHead {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		return
+	}
+
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
@@ -25,9 +33,10 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
+	lang := s.messagesForRequest(w, r).Lang
 	ch := make(chan sseEvent, 64)
 	s.sseMu.Lock()
-	s.sseClients[ch] = struct{}{}
+	s.sseClients[ch] = lang
 	s.sseMu.Unlock()
 
 	defer func() {
@@ -36,7 +45,9 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 		s.sseMu.Unlock()
 	}()
 
-	_, _ = fmt.Fprint(w, ": connected\n\n")
+	if _, err := fmt.Fprint(w, ": connected\n\n"); err != nil {
+		return
+	}
 	flusher.Flush()
 
 	keepAlive := time.NewTicker(25 * time.Second)
@@ -47,10 +58,14 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case ev := <-ch:
-			_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Event, ev.Data)
+			if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Event, ev.Data); err != nil {
+				return
+			}
 			flusher.Flush()
 		case <-keepAlive.C:
-			_, _ = fmt.Fprint(w, ": ping\n\n")
+			if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil {
+				return
+			}
 			flusher.Flush()
 		}
 	}
@@ -58,9 +73,12 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) broadcastSystemUpdate(sysID string) {
 	s.sseMu.RLock()
-	hasClients := len(s.sseClients) > 0
+	langsNeeded := make(map[string]struct{}, 2)
+	for _, lang := range s.sseClients {
+		langsNeeded[lang] = struct{}{}
+	}
 	s.sseMu.RUnlock()
-	if !hasClients {
+	if len(langsNeeded) == 0 {
 		return
 	}
 
@@ -69,42 +87,46 @@ func (s *Server) broadcastSystemUpdate(sysID string) {
 		return
 	}
 
-	t := s.defaultMessages()
-	var cardBuf bytes.Buffer
-	if err := s.cardTmpl.Execute(&cardBuf, toCardViewModelWithLang(snap, t)); err != nil {
-		return
-	}
-
-	cardPayload, err := json.Marshal(struct {
-		ID     string `json:"id"`
-		Status string `json:"status"`
-		HTML   string `json:"html"`
-	}{
-		ID:     sysID,
-		Status: string(snap.WorstStatus),
-		HTML:   cardBuf.String(),
-	})
-	if err != nil {
-		return
-	}
-
-	events := []sseEvent{{Event: "card", Data: string(cardPayload)}}
-
-	if statsHTML, err := s.renderStatsHTML(t); err == nil {
-		if statsPayload, err := json.Marshal(struct {
-			HTML string `json:"html"`
-		}{HTML: statsHTML}); err == nil {
-			events = append(events, sseEvent{Event: "stats", Data: string(statsPayload)})
+	eventsByLang := make(map[string][]sseEvent, len(langsNeeded))
+	for lang := range langsNeeded {
+		t := i18n.For(lang)
+		var cardBuf bytes.Buffer
+		if err := s.cardTmpl.Execute(&cardBuf, toCardViewModelWithLang(snap, t)); err != nil {
+			continue
 		}
+
+		cardPayload, err := json.Marshal(struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+			HTML   string `json:"html"`
+		}{
+			ID:     sysID,
+			Status: string(snap.WorstStatus),
+			HTML:   cardBuf.String(),
+		})
+		if err != nil {
+			continue
+		}
+
+		events := []sseEvent{{Event: "card", Data: string(cardPayload)}}
+		if statsHTML, err := s.renderStatsHTML(t); err == nil {
+			if statsPayload, err := json.Marshal(struct {
+				HTML string `json:"html"`
+			}{HTML: statsHTML}); err == nil {
+				events = append(events, sseEvent{Event: "stats", Data: string(statsPayload)})
+			}
+		}
+		eventsByLang[lang] = events
 	}
 
 	s.sseMu.RLock()
-	for ch := range s.sseClients {
+	for ch, lang := range s.sseClients {
+		events := eventsByLang[lang]
+		if len(events) == 0 || cap(ch)-len(ch) < len(events) {
+			continue
+		}
 		for _, ev := range events {
-			select {
-			case ch <- ev:
-			default:
-			}
+			ch <- ev
 		}
 	}
 	s.sseMu.RUnlock()

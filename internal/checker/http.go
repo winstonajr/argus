@@ -1,6 +1,7 @@
 package checker
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -15,6 +16,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"argus/internal/i18n"
@@ -31,13 +33,13 @@ func NewHTTPChecker() *HTTPChecker {
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
-			Timeout:   5 * time.Second,
+			Timeout:   30 * time.Second,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          100,
 		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   5 * time.Second,
+		TLSHandshakeTimeout:   30 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 
@@ -125,7 +127,12 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 
 	targetURL := opts.URL
 	if opts.HealthPath != "" {
-		if !strings.HasSuffix(targetURL, opts.HealthPath) {
+		if u, err := url.Parse(targetURL); err == nil {
+			if !strings.HasSuffix(u.Path, opts.HealthPath) {
+				u.Path = strings.TrimRight(u.Path, "/") + opts.HealthPath
+				targetURL = u.String()
+			}
+		} else if !strings.HasSuffix(targetURL, opts.HealthPath) {
 			targetURL = strings.TrimRight(targetURL, "/") + opts.HealthPath
 		}
 	}
@@ -135,37 +142,52 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 		method = http.MethodGet
 	}
 
+	var traceMu sync.Mutex
 	var dnsStart, connStart, tlsStart, reqStart time.Time
 	var dnsDur, connDur, tlsDur, ttfbDur time.Duration
 	trace := &httptrace.ClientTrace{
 		DNSStart: func(httptrace.DNSStartInfo) {
+			traceMu.Lock()
 			dnsStart = time.Now()
+			traceMu.Unlock()
 		},
 		DNSDone: func(httptrace.DNSDoneInfo) {
+			traceMu.Lock()
 			if !dnsStart.IsZero() {
 				dnsDur = time.Since(dnsStart)
 			}
+			traceMu.Unlock()
 		},
 		ConnectStart: func(_, _ string) {
+			traceMu.Lock()
 			connStart = time.Now()
+			traceMu.Unlock()
 		},
 		ConnectDone: func(_, _ string, _ error) {
+			traceMu.Lock()
 			if !connStart.IsZero() {
 				connDur = time.Since(connStart)
 			}
+			traceMu.Unlock()
 		},
 		TLSHandshakeStart: func() {
+			traceMu.Lock()
 			tlsStart = time.Now()
+			traceMu.Unlock()
 		},
 		TLSHandshakeDone: func(_ tls.ConnectionState, _ error) {
+			traceMu.Lock()
 			if !tlsStart.IsZero() {
 				tlsDur = time.Since(tlsStart)
 			}
+			traceMu.Unlock()
 		},
 		GotFirstResponseByte: func() {
+			traceMu.Lock()
 			if !reqStart.IsZero() {
 				ttfbDur = time.Since(reqStart)
 			}
+			traceMu.Unlock()
 		},
 	}
 
@@ -194,7 +216,9 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 	}
 
 	start := time.Now()
+	traceMu.Lock()
 	reqStart = start
+	traceMu.Unlock()
 	resp, err := client.Do(req)
 	latency := time.Since(start)
 
@@ -288,7 +312,8 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 		}
 	}
 
-	return Result{
+	traceMu.Lock()
+	res := Result{
 		OK:             true,
 		StatusCode:     statusCode,
 		Latency:        latency,
@@ -300,6 +325,8 @@ func (h *HTTPChecker) Check(ctx context.Context, opts CheckOptions) Result {
 		TLSDaysLeft:    tlsDaysLeft,
 		CheckedAt:      now,
 	}
+	traceMu.Unlock()
+	return res
 }
 
 func containsAnyIP(resolved, expected []string) bool {
@@ -315,7 +342,9 @@ func containsAnyIP(resolved, expected []string) bool {
 
 func matchJSONPath(body []byte, expr string) bool {
 	var data any
-	if err := json.Unmarshal(body, &data); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	if err := dec.Decode(&data); err != nil {
 		return false
 	}
 

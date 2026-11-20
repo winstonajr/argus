@@ -664,3 +664,29 @@ func TestServer_AuthMiddlewareAndExpiringMaintenance(t *testing.T) {
 		t.Errorf("expected 200 with until timestamp on maintenance POST, got %d %s", rrMaint.Code, rrMaint.Body.String())
 	}
 }
+
+func TestServer_JSONErrorsAndCSVSanitization(t *testing.T) {
+	server, _, db := setupTestServer(t)
+	defer db.Close()
+
+	req404 := httptest.NewRequest(http.MethodGet, "/api/systems/nonexistent", nil)
+	rr404 := httptest.NewRecorder()
+	server.ServeHTTP(rr404, req404)
+	if rr404.Code != http.StatusNotFound || !strings.HasPrefix(rr404.Header().Get("Content-Type"), "application/json") {
+		t.Errorf("expected 404 application/json, got %d %q", rr404.Code, rr404.Header().Get("Content-Type"))
+	}
+
+	reqBadMaint := httptest.NewRequest(http.MethodPost, "/api/systems/erp/maintenance?enabled=true&duration=invalid", nil)
+	rrBadMaint := httptest.NewRecorder()
+	server.ServeHTTP(rrBadMaint, reqBadMaint)
+	if rrBadMaint.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid maintenance duration, got %d", rrBadMaint.Code)
+	}
+
+	if got := sanitizeCSVCell("=CMD('calc')"); got != "'=CMD('calc')" {
+		t.Errorf("expected CSV formula prefix neutralized, got %q", got)
+	}
+	if got := sanitizeCSVCell("normal text"); got != "normal text" {
+		t.Errorf("expected normal CSV cell untouched, got %q", got)
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"io"
 	"log"
 	"mime"
 	"net"
@@ -28,6 +29,7 @@ type Notifier struct {
 	httpClient      *http.Client
 	telegramBaseURL string
 	mu              sync.Mutex
+	wg              sync.WaitGroup
 	lastSent        map[string]time.Time
 	downSince       map[string]time.Time
 }
@@ -70,11 +72,16 @@ func alertsEnabled(cfg config.AlertsConfig) bool {
 
 // HandleEvent evaluates a status transition and dispatches notifications asynchronously.
 func (n *Notifier) HandleEvent(e monitor.ChangeEvent) {
+	key := e.SystemID + ":" + e.Kind
 	if e.InMaintenance {
+		if e.ToStatus == monitor.StatusUP {
+			n.mu.Lock()
+			delete(n.downSince, key)
+			n.mu.Unlock()
+		}
 		return
 	}
 
-	key := e.SystemID + ":" + e.Kind
 	now := time.Now()
 
 	var shouldSend bool
@@ -95,15 +102,17 @@ func (n *Notifier) HandleEvent(e monitor.ChangeEvent) {
 				n.downSince[key] = now
 			}
 		}
-		if last, ok := n.lastSent[key]; !ok || cfg.Cooldown <= 0 || now.Sub(last) >= cfg.Cooldown {
-			n.lastSent[key] = now
+		cdKey := key + ":DOWN"
+		if last, ok := n.lastSent[cdKey]; !ok || cfg.Cooldown <= 0 || now.Sub(last) >= cfg.Cooldown {
+			n.lastSent[cdKey] = now
 			shouldSend = true
 		}
 
 	case monitor.StatusDegraded:
 		if cfg.NotifyOnDegraded {
-			if last, ok := n.lastSent[key]; !ok || cfg.Cooldown <= 0 || now.Sub(last) >= cfg.Cooldown {
-				n.lastSent[key] = now
+			cdKey := key + ":DEGRADED"
+			if last, ok := n.lastSent[cdKey]; !ok || cfg.Cooldown <= 0 || now.Sub(last) >= cfg.Cooldown {
+				n.lastSent[cdKey] = now
 				shouldSend = true
 			}
 		}
@@ -127,7 +136,24 @@ func (n *Notifier) HandleEvent(e monitor.ChangeEvent) {
 		return
 	}
 
-	go n.dispatch(context.Background(), cfg, e, mttr)
+	n.wg.Add(1)
+	go func() {
+		defer n.wg.Done()
+		n.dispatch(context.Background(), cfg, e, mttr)
+	}()
+}
+
+// Close waits for in-flight notifications to finish until ctx expires.
+func (n *Notifier) Close(ctx context.Context) {
+	done := make(chan struct{})
+	go func() {
+		n.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
 }
 
 // ErrNoChannelsConfigured is returned when testing alerts without any configured channel.
@@ -282,7 +308,10 @@ func (n *Notifier) postJSON(ctx context.Context, url string, payload any, header
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
@@ -309,13 +338,26 @@ func (n *Notifier) sendEmail(ctx context.Context, emailCfg config.EmailAlertConf
 			cleanTo = append(cleanTo, clean)
 		}
 	}
+	if len(cleanTo) == 0 {
+		return errors.New("no valid email recipients")
+	}
+	normalizedBody := strings.ReplaceAll(strings.ReplaceAll(body, "\r\n", "\n"), "\n", "\r\n")
 	encodedSubject := mime.QEncoding.Encode("utf-8", sanitizeHeader(subject))
 	now := time.Now().UTC()
 	msgID := fmt.Sprintf("<%d@argus.local>", now.UnixNano())
 	msg := fmt.Sprintf("Date: %s\r\nMessage-ID: %s\r\nFrom: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s\r\n",
-		now.Format(time.RFC1123Z), msgID, from, strings.Join(cleanTo, ", "), encodedSubject, body)
+		now.Format(time.RFC1123Z), msgID, from, strings.Join(cleanTo, ", "), encodedSubject, normalizedBody)
 
-	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", addr)
+	var conn net.Conn
+	var err error
+	if port == 465 {
+		dialer := &tls.Dialer{
+			Config: &tls.Config{ServerName: emailCfg.SMTPHost},
+		}
+		conn, err = dialer.DialContext(ctx, "tcp", addr)
+	} else {
+		conn, err = (&net.Dialer{}).DialContext(ctx, "tcp", addr)
+	}
 	if err != nil {
 		return err
 	}
@@ -330,9 +372,11 @@ func (n *Notifier) sendEmail(ctx context.Context, emailCfg config.EmailAlertConf
 	}
 	defer c.Close()
 
-	if ok, _ := c.Extension("STARTTLS"); ok {
-		if err := c.StartTLS(&tls.Config{ServerName: emailCfg.SMTPHost}); err != nil {
-			return err
+	if port != 465 {
+		if ok, _ := c.Extension("STARTTLS"); ok {
+			if err := c.StartTLS(&tls.Config{ServerName: emailCfg.SMTPHost}); err != nil {
+				return err
+			}
 		}
 	}
 	if emailCfg.Username != "" {

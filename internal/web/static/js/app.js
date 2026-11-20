@@ -23,10 +23,27 @@
   }
 
   // 2. Theme, TV Mode, View Mode & Language
+  function syncThemeUI(theme) {
+    const isLight = theme === 'light';
+    const btn = document.getElementById('theme-toggle-btn');
+    if (btn) {
+      btn.setAttribute('aria-pressed', isLight ? 'true' : 'false');
+      const useEl = btn.querySelector('use');
+      if (useEl) {
+        useEl.setAttribute('href', isLight ? '#icon-sun' : '#icon-moon');
+      }
+    }
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) {
+      metaTheme.setAttribute('content', isLight ? '#F6F7F9' : '#0E1013');
+    }
+  }
+
   function toggleTheme() {
     const current = document.documentElement.getAttribute('data-theme') || 'dark';
     const next = current === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', next);
+    syncThemeUI(next);
     try {
       localStorage.setItem('argus-theme', next);
     } catch (_) {}
@@ -249,12 +266,23 @@
   function bindStatsBarFilterClicks() {
     const container = document.getElementById('stats-container');
     if (!container) return;
-    container.addEventListener('click', function(e) {
-      const triggerEl = e.target.closest('[data-filter-trigger]');
+    function activate(target) {
+      const triggerEl = target.closest('[data-filter-trigger]');
       if (!triggerEl) return;
       const targetFilter = triggerEl.getAttribute('data-filter-trigger');
       if (targetFilter) {
         setFilter(targetFilter);
+      }
+    }
+    container.addEventListener('click', function(e) {
+      activate(e.target);
+    });
+    container.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        if (e.target.closest('[data-filter-trigger]')) {
+          e.preventDefault();
+          activate(e.target);
+        }
       }
     });
   }
@@ -441,6 +469,7 @@
 
   function startSantaEasterEgg() {
     if (santaState.active || !document.body) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     santaState.active = true;
 
     const canvas = document.createElement('canvas');
@@ -768,15 +797,31 @@
   }
 
   // 8. Keyboard Shortcuts & Help Modal
+  let lastFocusedBeforeModal = null;
+
   function toggleShortcutsModal(forceOpen) {
     const modal = document.getElementById('shortcuts-modal');
     if (!modal) return;
     const nextHidden = typeof forceOpen === 'boolean' ? !forceOpen : !modal.hidden;
-    modal.hidden = nextHidden;
+    if (!nextHidden && modal.hidden) {
+      lastFocusedBeforeModal = document.activeElement;
+      modal.hidden = false;
+      const closeBtn = document.getElementById('shortcuts-close-btn');
+      if (closeBtn) closeBtn.focus();
+    } else if (nextHidden && !modal.hidden) {
+      modal.hidden = true;
+      if (lastFocusedBeforeModal && typeof lastFocusedBeforeModal.focus === 'function') {
+        lastFocusedBeforeModal.focus();
+      }
+      lastFocusedBeforeModal = null;
+    }
   }
 
   window.addEventListener('keydown', function(e) {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+    if (e.ctrlKey || e.metaKey || e.altKey) {
+      return;
+    }
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' || e.target.isContentEditable) {
       if (e.key === 'Escape') {
         if (e.target.id === 'search-input') {
           e.target.value = '';
@@ -789,7 +834,14 @@
       return;
     }
     if (e.key === 'Escape') {
-      toggleShortcutsModal(false);
+      const modal = document.getElementById('shortcuts-modal');
+      if (modal && !modal.hidden) {
+        toggleShortcutsModal(false);
+        return;
+      }
+      if (document.documentElement.classList.contains('tv-mode') && document.getElementById('tv-toggle-btn')) {
+        toggleTVMode();
+      }
       return;
     }
     if (e.key === '?') {
@@ -1105,7 +1157,13 @@
             setTimeout(function() {
               if (waitingManualCheck) {
                 waitingManualCheck = false;
-                refreshHistoryPageInPlace(true);
+                refreshHistoryPageInPlace(true).finally(function() {
+                  const curBtn = document.getElementById('check-now-btn');
+                  if (curBtn) {
+                    curBtn.textContent = originalText;
+                    curBtn.disabled = false;
+                  }
+                });
               }
             }, 1800);
             return;
@@ -1248,6 +1306,7 @@
   }
 
   window.addEventListener('DOMContentLoaded', function() {
+    syncThemeUI(document.documentElement.getAttribute('data-theme') || 'dark');
     initAutoHideScrollbar();
     initTVMode();
     initViewMode();
@@ -1278,6 +1337,9 @@
 
     const tvBtn = document.getElementById('tv-toggle-btn');
     if (tvBtn) tvBtn.addEventListener('click', toggleTVMode);
+
+    const tvExitBtn = document.getElementById('tv-exit-btn');
+    if (tvExitBtn) tvExitBtn.addEventListener('click', toggleTVMode);
 
     const langBtn = document.getElementById('lang-toggle-btn');
     if (langBtn) langBtn.addEventListener('click', toggleLanguage);

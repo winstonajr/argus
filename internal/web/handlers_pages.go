@@ -123,7 +123,7 @@ func (s *Server) renderStatsHTML(t i18n.Messages) (string, error) {
 
 	lastCheckStr := "—"
 	if !stats.LastCheck.IsZero() {
-		lastCheckStr = stats.LastCheck.Format("15:04:05")
+		lastCheckStr = stats.LastCheck.Local().Format("15:04:05")
 	}
 
 	uptimeDur := time.Since(stats.UptimeStart).Truncate(time.Second)
@@ -190,7 +190,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 			log.Printf("[WARN] list events: %v", err)
 		}
 
-		failed, err = s.storage.ListFailedChecks(ctx, id, from, to, 50, 0)
+		failed, err = s.storage.ListFailedChecks(ctx, id, from, to, 51, 0)
 		if err != nil {
 			log.Printf("[WARN] list failed checks: %v", err)
 		}
@@ -227,6 +227,11 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 			DateGroup:           dateGroup,
 			DurationStr:         formatDurationShort(e.Duration),
 		}
+	}
+
+	hasMoreFailed := len(failed) > 50
+	if hasMoreFailed {
+		failed = failed[:50]
 	}
 
 	failedVMs := make([]failedCheckViewModel, len(failed))
@@ -328,7 +333,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		MTBFStr:          mtbfStr,
 		Events:           eventVMs,
 		FailedChecks:     failedVMs,
-		HasMoreFailed:    len(failedVMs) >= 50,
+		HasMoreFailed:    hasMoreFailed,
 		Buckets:          bucketVMs,
 		LatencyChart:     latencyChart,
 	}
@@ -353,11 +358,23 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	from := to.Add(-duration)
 	ctx := r.Context()
 
-	var events []storage.StoredEvent
+	events := make([]storage.StoredEvent, 0)
 	stats := storage.SystemHistoryStats{DNSUptime: 100.0, IPUptime: 100.0}
 	if s.storage != nil {
-		events, _ = s.storage.ListEvents(ctx, id, from, to, 1000)
-		stats, _ = s.storage.GetSystemUptimeStatsWithEvents(ctx, id, from, to, events)
+		var err error
+		events, err = s.storage.ListEvents(ctx, id, from, to, 1000)
+		if err != nil {
+			http.Error(w, "failed to load events", http.StatusInternalServerError)
+			return
+		}
+		if events == nil {
+			events = make([]storage.StoredEvent, 0)
+		}
+		stats, err = s.storage.GetSystemUptimeStatsWithEvents(ctx, id, from, to, events)
+		if err != nil {
+			http.Error(w, "failed to compute stats", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	format := strings.ToLower(r.URL.Query().Get("format"))
@@ -369,15 +386,18 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		for _, ev := range events {
 			_ = cw.Write([]string{
 				ev.OccurredAt.Format(time.RFC3339),
-				ev.Kind,
-				ev.FromStatus,
-				ev.ToStatus,
-				ev.Diagnosis,
-				ev.Detail,
+				sanitizeCSVCell(ev.Kind),
+				sanitizeCSVCell(ev.FromStatus),
+				sanitizeCSVCell(ev.ToStatus),
+				sanitizeCSVCell(ev.Diagnosis),
+				sanitizeCSVCell(ev.Detail),
 				fmt.Sprintf("%.0f", ev.Duration.Seconds()),
 			})
 		}
 		cw.Flush()
+		if err := cw.Error(); err != nil {
+			log.Printf("[WARN] csv export flush: %v", err)
+		}
 		return
 	}
 
@@ -443,7 +463,7 @@ func (s *Server) handlePublicStatus(w http.ResponseWriter, r *http.Request) {
 				daysVM = make([]publicDayVM, len(daily))
 				for i, d := range daily {
 					stLower := strings.ToLower(d.Status)
-					dateLabel := d.Day.Local().Format("02/01")
+					dateLabel := d.Day.UTC().Format("02/01")
 					tip := fmt.Sprintf("%s: %s", dateLabel, t.StatusNoData)
 					if d.HasData {
 						tip = fmt.Sprintf("%s: %.1f%%", dateLabel, d.UptimePct)
@@ -483,7 +503,7 @@ func (s *Server) handlePublicStatus(w http.ResponseWriter, r *http.Request) {
 				}
 				recentIncidents = append(recentIncidents, publicIncidentVM{
 					SystemName:          name,
-					ToStatus:            ev.ToStatus,
+					ToStatus:            translateStatus(ev.ToStatus, t),
 					ToStatusLower:       strings.ToLower(ev.ToStatus),
 					Diagnosis:           ev.Diagnosis,
 					OccurredAtFormatted: ev.OccurredAt.Local().Format("02/01 15:04"),
@@ -527,5 +547,29 @@ func (s *Server) handlePublicStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.statusTmpl.Execute(w, data); err != nil {
 		log.Printf("[ERROR] render status: %v", err)
+	}
+}
+
+func sanitizeCSVCell(v string) string {
+	if v == "" {
+		return v
+	}
+	switch v[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + v
+	}
+	return v
+}
+
+func translateStatus(status string, t i18n.Messages) string {
+	switch strings.ToUpper(strings.TrimSpace(status)) {
+	case "UP":
+		return t.StatusOperational
+	case "DEGRADED":
+		return t.StatusDegraded
+	case "DOWN":
+		return t.StatusDown
+	default:
+		return status
 	}
 }
