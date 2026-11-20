@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	_ "time/tzdata"
 
 	"argus/internal/i18n"
 	"gopkg.in/yaml.v3"
@@ -79,6 +80,7 @@ func (a AuthConfig) Enabled() bool {
 type ServerConfig struct {
 	Addr           string     `yaml:"addr"`
 	Lang           string     `yaml:"lang"`
+	Timezone       string     `yaml:"timezone"`
 	Auth           AuthConfig `yaml:"auth"`
 	SantaEasterEgg bool       `yaml:"santa_easter_egg"`
 }
@@ -242,6 +244,13 @@ func (c *Config) Validate() error {
 	}
 	c.Server.Lang = i18n.Normalize(c.Server.Lang)
 	i18n.SetDefault(c.Server.Lang)
+
+	c.Server.Timezone = strings.TrimSpace(c.Server.Timezone)
+	if c.Server.Timezone != "" {
+		if _, err := time.LoadLocation(c.Server.Timezone); err != nil {
+			return fmt.Errorf("invalid server.timezone %q: %w", c.Server.Timezone, err)
+		}
+	}
 
 	if strings.TrimSpace(c.Storage.Path) == "" {
 		return errors.New("storage.path cannot be empty")

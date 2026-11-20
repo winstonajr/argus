@@ -246,6 +246,29 @@ func TestSantaEasterEggDefaultAndEnvOverride(t *testing.T) {
 	}
 }
 
+func TestTimezoneConfigAndEnvOverride(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Systems = []SystemConfig{{ID: "sys1", URL: "https://example.com"}}
+	cfg.Server.Timezone = "America/Sao_Paulo"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected valid timezone, got: %v", err)
+	}
+
+	cfg.Server.Timezone = "Invalid/Zone_Name"
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected error for invalid timezone")
+	}
+
+	t.Setenv("ARGUS_TIMEZONE", "Europe/Lisbon")
+	cfg.applyEnvOverrides()
+	if cfg.Server.Timezone != "Europe/Lisbon" {
+		t.Fatalf("expected ARGUS_TIMEZONE override to set Europe/Lisbon, got %q", cfg.Server.Timezone)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected valid overridden timezone, got: %v", err)
+	}
+}
+
 func stringContains(s, substr string) bool {
 	for i := 0; i+len(substr) <= len(s); i++ {
 		if s[i:i+len(substr)] == substr {

@@ -87,6 +87,13 @@ func (c *Config) applyEnvOverrides() {
 	} else if lang := os.Getenv("ARGUS_SERVER_LANG"); lang != "" {
 		c.Server.Lang = lang
 	}
+	if tz := os.Getenv("ARGUS_TIMEZONE"); tz != "" {
+		c.Server.Timezone = tz
+	} else if tz := os.Getenv("ARGUS_SERVER_TIMEZONE"); tz != "" {
+		c.Server.Timezone = tz
+	} else if tz := os.Getenv("TZ"); tz != "" && strings.TrimSpace(c.Server.Timezone) == "" {
+		c.Server.Timezone = tz
+	}
 	if u := os.Getenv("ARGUS_SERVER_AUTH_USERNAME"); u != "" {
 		c.Server.Auth.Username = u
 	}

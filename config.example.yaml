@@ -1,6 +1,7 @@
 server:
   addr: ":8080"
   lang: "pt-BR" # "pt-BR" ou "en" (também configurável via ARGUS_LANG)
+  timezone: "America/Sao_Paulo" # Fuso horário IANA (ex: "America/Sao_Paulo", "UTC"; também via ARGUS_TIMEZONE ou TZ)
   santa_easter_egg: true # Easter egg de Natal quando todos os sistemas caírem (ARGUS_SANTA_EASTER_EGG)
   # auth:
   #   username: "${ARGUS_SERVER_AUTH_USERNAME:-admin}"

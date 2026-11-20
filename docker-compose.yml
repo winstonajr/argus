@@ -14,6 +14,7 @@ services:
       - ARGUS_CONFIG_PATH=/app/config.yaml
       - ARGUS_STORAGE_PATH=/app/data/argus.db
       - ARGUS_LANG=${ARGUS_LANG:-pt-BR} # "pt-BR" or "en"
+      - ARGUS_TIMEZONE=${ARGUS_TIMEZONE:-America/Sao_Paulo} # IANA timezone (e.g. America/Sao_Paulo, UTC)
       # Optional authentication (protects dashboard & API while keeping /status, /healthz, /metrics public)
       # - ARGUS_SERVER_AUTH_USERNAME=admin
       # - ARGUS_SERVER_AUTH_PASSWORD=secret

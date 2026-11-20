@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	_ "time/tzdata"
 
 	"argus/internal/checker"
 	"argus/internal/config"
@@ -55,6 +56,16 @@ func main() {
 	if err != nil {
 		slog.Error("erro ao carregar configuração", "err", err)
 		os.Exit(1)
+	}
+
+	if cfg.Server.Timezone != "" {
+		loc, locErr := time.LoadLocation(cfg.Server.Timezone)
+		if locErr != nil {
+			slog.Error("erro ao carregar timezone", "timezone", cfg.Server.Timezone, "err", locErr)
+			os.Exit(1)
+		}
+		time.Local = loc
+		slog.Info("timezone configurado", "timezone", time.Local.String())
 	}
 
 	db, err := storage.Open(cfg.Storage.Path, cfg.Storage.RetentionChecks, cfg.Storage.RetentionEvents)
