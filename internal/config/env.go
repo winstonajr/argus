@@ -174,6 +174,9 @@ func (c *Config) applyAlertEnvOverrides() {
 			c.Alerts.NotifyOnDegraded = b
 		}
 	}
+	if v := os.Getenv("ARGUS_PUBLIC_URL"); v != "" {
+		c.Alerts.PublicURL = strings.TrimRight(strings.TrimSpace(v), "/")
+	}
 
 	if v := os.Getenv("ARGUS_ALERTS_WEBHOOK_URL"); v != "" {
 		c.Alerts.Webhook.URL = v

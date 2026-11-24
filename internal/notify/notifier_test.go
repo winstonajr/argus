@@ -148,9 +148,13 @@ func TestNotifier_SlackDiscordTelegramAndMaintenance(t *testing.T) {
 		SystemID:   "erp",
 		SystemName: "ERP",
 		Kind:       "dns",
+		URL:        "https://erp.empresa.com",
+		IP:         "10.20.30.40",
 		FromStatus: monitor.StatusUP,
 		ToStatus:   monitor.StatusDown,
 		Diagnosis:  "Borda Cloudflare 522",
+		StatusCode: 522,
+		Latency:    150 * time.Millisecond,
 		OccurredAt: time.Now(),
 	})
 
@@ -169,12 +173,22 @@ func TestNotifier_SlackDiscordTelegramAndMaintenance(t *testing.T) {
 	if !strings.Contains(received["/slack"]["text"].(string), "ERP") {
 		t.Errorf("unexpected slack payload: %v", received["/slack"])
 	}
-	if !strings.Contains(received["/discord"]["content"].(string), "ERP") {
-		t.Errorf("unexpected discord payload: %v", received["/discord"])
+	if atts, ok := received["/slack"]["attachments"].([]any); !ok || len(atts) == 0 {
+		t.Errorf("expected slack attachments, got %v", received["/slack"])
+	}
+	if embeds, ok := received["/discord"]["embeds"].([]any); !ok || len(embeds) == 0 {
+		t.Errorf("expected discord embeds, got %v", received["/discord"])
 	}
 	tgPayload := received["/bot123:ABC/sendMessage"]
 	if tgPayload == nil || tgPayload["chat_id"] != "-100999" {
 		t.Errorf("unexpected telegram payload: %v", tgPayload)
+	}
+	if tgPayload["disable_web_page_preview"] != true {
+		t.Errorf("expected disable_web_page_preview=true, got %v", tgPayload["disable_web_page_preview"])
+	}
+	tgText, _ := tgPayload["text"].(string)
+	if !strings.Contains(tgText, "<code>https://erp.empresa.com</code>") || !strings.Contains(tgText, "<code>10.20.30.40</code>") {
+		t.Errorf("expected DNS and IP in telegram <code> tags, got: %s", tgText)
 	}
 }
 
@@ -208,7 +222,7 @@ func TestNotifier_SendEmailRespectsContextTimeout(t *testing.T) {
 	defer cancel()
 
 	start := time.Now()
-	err = n.sendEmail(ctx, n.cfg.Email, "Teste", "Corpo")
+	err = n.sendEmail(ctx, n.cfg.Email, "Teste", "Corpo", "")
 	if err == nil {
 		t.Fatalf("expected sendEmail to fail on unresponsive SMTP server timeout")
 	}
@@ -316,5 +330,47 @@ func TestNotifier_DegradedCooldownDoesNotSuppressDownAndMaintenanceClearsDownSin
 	}
 	if len(events) != 2 {
 		t.Errorf("expected 2 webhook calls (DEGRADED and DOWN), got %d", len(events))
+	}
+}
+
+func TestNotifier_TelegramEscapesHTMLAndEmailHTMLFormat(t *testing.T) {
+	ev := monitor.ChangeEvent{
+		SystemID:   "portal",
+		SystemName: "Portal <Prod> & API",
+		Kind:       "ip",
+		URL:        "https://portal.example.com?a=1&b=2",
+		IP:         "192.168.10.50",
+		TCPPort:    8443,
+		FromStatus: monitor.StatusUP,
+		ToStatus:   monitor.StatusDown,
+		Diagnosis:  "Falha <crítica> & timeout",
+		Detail:     "EOF <socket>",
+		OccurredAt: time.Date(2026, 11, 24, 19, 45, 0, 0, time.UTC),
+	}
+
+	ac := buildAlertContext(ev, 0, "https://argus.example.com/", false)
+	tg := formatTelegramHTML(ac)
+	if strings.Contains(tg, "<Prod>") || strings.Contains(tg, "<crítica>") || strings.Contains(tg, "<socket>") {
+		t.Fatalf("telegram HTML did not escape unsafe tags: %s", tg)
+	}
+	if !strings.Contains(tg, "Portal &lt;Prod&gt; &amp; API") {
+		t.Errorf("expected escaped system name in telegram HTML: %s", tg)
+	}
+	if !strings.Contains(tg, "<code>192.168.10.50</code>") || !strings.Contains(tg, "<code>8443</code>") {
+		t.Errorf("expected IP and TCP port in telegram HTML: %s", tg)
+	}
+	if !strings.Contains(tg, `<a href="https://argus.example.com">`) {
+		t.Errorf("expected public URL link in telegram HTML: %s", tg)
+	}
+
+	emailHTML := formatEmailHTML(ac)
+	if !strings.Contains(emailHTML, "#DC2626") {
+		t.Errorf("expected DOWN severity color in email HTML")
+	}
+	if !strings.Contains(emailHTML, "192.168.10.50") || !strings.Contains(emailHTML, "https://argus.example.com") {
+		t.Errorf("expected IP and dashboard link in email HTML")
+	}
+	if !strings.Contains(ac.EmailSubject, "🔴") || !strings.Contains(ac.EmailSubject, "Portal <Prod> & API") {
+		t.Errorf("unexpected email subject: %s", ac.EmailSubject)
 	}
 }

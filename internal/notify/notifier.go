@@ -175,31 +175,31 @@ func (n *Notifier) SendTest(ctx context.Context) (int, error) {
 	ev := monitor.ChangeEvent{
 		SystemID:   "argus-test",
 		SystemName: "Argus NOC",
-		Kind:       i18n.Pick("teste", "test"),
+		Kind:       "dns",
+		URL:        "https://argus.local",
+		IP:         "127.0.0.1",
 		FromStatus: monitor.StatusUnknown,
 		ToStatus:   monitor.StatusUP,
 		Diagnosis:  i18n.Pick("Teste manual de notificação", "Manual notification test"),
 		Detail:     i18n.Pick("Se você recebeu esta mensagem, o canal de alertas está operacional.", "If you received this message, the alert channel is operational."),
+		StatusCode: 200,
+		Latency:    12 * time.Millisecond,
 		OccurredAt: time.Now(),
 	}
 
-	title := i18n.Pick("[TESTE] Argus — Teste de Notificação", "[TEST] Argus — Notification Test")
-	body := i18n.Pick(
-		"Diagnóstico: Teste manual de notificação\nDetalhe: Se você recebeu esta mensagem, o canal de alertas está operacional.",
-		"Diagnosis: Manual notification test\nDetail: If you received this message, the alert channel is operational.",
-	)
-	return n.sendToChannels(ctx, cfg, ev, 0, title, body)
+	ac := buildAlertContext(ev, 0, cfg.PublicURL, true)
+	return n.sendToChannels(ctx, cfg, ev, 0, ac)
 }
 
 func (n *Notifier) dispatch(ctx context.Context, cfg config.AlertsConfig, e monitor.ChangeEvent, mttr time.Duration) {
 	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
 
-	title, body := formatAlertMessage(e, mttr)
-	_, _ = n.sendToChannels(ctx, cfg, e, mttr, title, body)
+	ac := buildAlertContext(e, mttr, cfg.PublicURL, false)
+	_, _ = n.sendToChannels(ctx, cfg, e, mttr, ac)
 }
 
-func (n *Notifier) sendToChannels(ctx context.Context, cfg config.AlertsConfig, e monitor.ChangeEvent, mttr time.Duration, title, body string) (int, error) {
+func (n *Notifier) sendToChannels(ctx context.Context, cfg config.AlertsConfig, e monitor.ChangeEvent, mttr time.Duration, ac alertContext) (int, error) {
 	var (
 		mu   sync.Mutex
 		wg   sync.WaitGroup
@@ -218,6 +218,9 @@ func (n *Notifier) sendToChannels(ctx context.Context, cfg config.AlertsConfig, 
 		}
 	}
 
+	title := ac.PlainTitle
+	body := ac.PlainBody
+
 	if url := strings.TrimSpace(cfg.Webhook.URL); url != "" {
 		wg.Add(1)
 		go func(u string) {
@@ -226,10 +229,16 @@ func (n *Notifier) sendToChannels(ctx context.Context, cfg config.AlertsConfig, 
 				"system_id":    e.SystemID,
 				"system_name":  e.SystemName,
 				"kind":         e.Kind,
+				"url":          e.URL,
+				"ip":           e.IP,
+				"tcp_port":     e.TCPPort,
 				"from_status":  string(e.FromStatus),
 				"to_status":    string(e.ToStatus),
 				"diagnosis":    e.Diagnosis,
 				"detail":       e.Detail,
+				"status_code":  e.StatusCode,
+				"latency_ms":   e.Latency.Milliseconds(),
+				"error":        e.Error,
 				"mttr_seconds": int64(mttr.Seconds()),
 				"occurred_at":  e.OccurredAt,
 				"title":        title,
@@ -243,9 +252,7 @@ func (n *Notifier) sendToChannels(ctx context.Context, cfg config.AlertsConfig, 
 		wg.Add(1)
 		go func(u string) {
 			defer wg.Done()
-			payload := map[string]string{
-				"text": fmt.Sprintf("*%s*\n%s", title, body),
-			}
+			payload := buildSlackPayload(ac)
 			recordResult("slack", n.postJSON(ctx, u, payload, nil))
 		}(url)
 	}
@@ -254,9 +261,7 @@ func (n *Notifier) sendToChannels(ctx context.Context, cfg config.AlertsConfig, 
 		wg.Add(1)
 		go func(u string) {
 			defer wg.Done()
-			payload := map[string]string{
-				"content": fmt.Sprintf("**%s**\n%s", title, body),
-			}
+			payload := buildDiscordPayload(ac, e.OccurredAt)
 			recordResult("discord", n.postJSON(ctx, u, payload, nil))
 		}(url)
 	}
@@ -270,10 +275,11 @@ func (n *Notifier) sendToChannels(ctx context.Context, cfg config.AlertsConfig, 
 		wg.Add(1)
 		go func(u string) {
 			defer wg.Done()
-			payload := map[string]string{
-				"chat_id":    cfg.Telegram.ChatID,
-				"text":       fmt.Sprintf("<b>%s</b>\n%s", html.EscapeString(title), html.EscapeString(body)),
-				"parse_mode": "HTML",
+			payload := map[string]any{
+				"chat_id":                  cfg.Telegram.ChatID,
+				"text":                     formatTelegramHTML(ac),
+				"parse_mode":               "HTML",
+				"disable_web_page_preview": true,
 			}
 			recordResult("telegram", n.postJSON(ctx, u, payload, nil))
 		}(tgURL)
@@ -283,7 +289,7 @@ func (n *Notifier) sendToChannels(ctx context.Context, cfg config.AlertsConfig, 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			recordResult("email", n.sendEmail(ctx, cfg.Email, title, body))
+			recordResult("email", n.sendEmail(ctx, cfg.Email, ac.EmailSubject, body, formatEmailHTML(ac)))
 		}()
 	}
 
@@ -322,7 +328,7 @@ func sanitizeHeader(v string) string {
 	return strings.NewReplacer("\r", " ", "\n", " ").Replace(strings.TrimSpace(v))
 }
 
-func (n *Notifier) sendEmail(ctx context.Context, emailCfg config.EmailAlertConfig, subject, body string) error {
+func (n *Notifier) sendEmail(ctx context.Context, emailCfg config.EmailAlertConfig, subject, plainBody, htmlBody string) error {
 	port := emailCfg.SMTPPort
 	if port <= 0 {
 		port = 587
@@ -341,12 +347,27 @@ func (n *Notifier) sendEmail(ctx context.Context, emailCfg config.EmailAlertConf
 	if len(cleanTo) == 0 {
 		return errors.New("no valid email recipients")
 	}
-	normalizedBody := strings.ReplaceAll(strings.ReplaceAll(body, "\r\n", "\n"), "\n", "\r\n")
+	normalizeCRLF := func(s string) string {
+		return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\n", "\r\n")
+	}
 	encodedSubject := mime.QEncoding.Encode("utf-8", sanitizeHeader(subject))
 	now := time.Now().UTC()
 	msgID := fmt.Sprintf("<%d@argus.local>", now.UnixNano())
-	msg := fmt.Sprintf("Date: %s\r\nMessage-ID: %s\r\nFrom: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s\r\n",
-		now.Format(time.RFC1123Z), msgID, from, strings.Join(cleanTo, ", "), encodedSubject, normalizedBody)
+
+	var msg string
+	if strings.TrimSpace(htmlBody) == "" {
+		msg = fmt.Sprintf("Date: %s\r\nMessage-ID: %s\r\nFrom: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s\r\n",
+			now.Format(time.RFC1123Z), msgID, from, strings.Join(cleanTo, ", "), encodedSubject, normalizeCRLF(plainBody))
+	} else {
+		boundary := fmt.Sprintf("argus-alt-%d", now.UnixNano())
+		msg = fmt.Sprintf(
+			"Date: %s\r\nMessage-ID: %s\r\nFrom: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: multipart/alternative; boundary=\"%s\"\r\n\r\n--%s\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s\r\n\r\n--%s\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s\r\n\r\n--%s--\r\n",
+			now.Format(time.RFC1123Z), msgID, from, strings.Join(cleanTo, ", "), encodedSubject, boundary,
+			boundary, normalizeCRLF(plainBody),
+			boundary, normalizeCRLF(htmlBody),
+			boundary,
+		)
+	}
 
 	var conn net.Conn
 	var err error
@@ -407,29 +428,352 @@ func (n *Notifier) sendEmail(ctx context.Context, emailCfg config.EmailAlertConf
 	return c.Quit()
 }
 
-func formatAlertMessage(e monitor.ChangeEvent, mttr time.Duration) (string, string) {
-	var badge string
-	switch e.ToStatus {
+type alertContext struct {
+	Emoji        string
+	Badge        string
+	ColorHex     string
+	ColorInt     int
+	SystemName   string
+	KindUpper    string
+	URL          string
+	IP           string
+	TCPPort      int
+	Diagnosis    string
+	Detail       string
+	OccurredAt   string
+	MTTR         string
+	PublicURL    string
+	IsRecovery   bool
+	PlainTitle   string
+	PlainBody    string
+	EmailSubject string
+}
+
+func statusVisual(status monitor.Status, isTest bool) (emoji, badge, colorHex string, colorInt int) {
+	if isTest {
+		return "🧪", i18n.Pick("TESTE", "TEST"), "#2563EB", 0x2563EB
+	}
+	switch status {
 	case monitor.StatusDown:
-		badge = i18n.Pick("[FORA DO AR]", "[DOWN]")
+		return "🔴", i18n.Pick("FORA DO AR", "DOWN"), "#DC2626", 0xDC2626
 	case monitor.StatusDegraded:
-		badge = i18n.Pick("[INSTÁVEL]", "[DEGRADED]")
+		return "🟡", i18n.Pick("INSTÁVEL", "DEGRADED"), "#D97706", 0xD97706
 	case monitor.StatusUP:
-		badge = i18n.Pick("[RECUPERADO]", "[RECOVERED]")
+		return "🟢", i18n.Pick("RECUPERADO", "RECOVERED"), "#16A34A", 0x16A34A
 	default:
-		badge = fmt.Sprintf("[%s]", e.ToStatus)
+		return "⚪", string(status), "#64748B", 0x64748B
+	}
+}
+
+func composeDetailLine(e monitor.ChangeEvent) string {
+	var parts []string
+	if d := strings.TrimSpace(e.Detail); d != "" {
+		parts = append(parts, d)
+	}
+	if e.StatusCode > 0 {
+		codeStr := fmt.Sprintf("HTTP %d", e.StatusCode)
+		if !strings.Contains(strings.Join(parts, " "), codeStr) {
+			parts = append(parts, codeStr)
+		}
+	}
+	if e.Latency > 0 {
+		parts = append(parts, e.Latency.Truncate(time.Millisecond).String())
+	}
+	if errMsg := strings.TrimSpace(e.Error); errMsg != "" && !strings.Contains(strings.Join(parts, " "), errMsg) {
+		parts = append(parts, errMsg)
+	}
+	return strings.Join(parts, " · ")
+}
+
+func buildAlertContext(e monitor.ChangeEvent, mttr time.Duration, publicURL string, isTest bool) alertContext {
+	emoji, badge, colorHex, colorInt := statusVisual(e.ToStatus, isTest)
+	sysName := strings.TrimSpace(e.SystemName)
+	if sysName == "" {
+		sysName = e.SystemID
+	}
+	kindUpper := strings.ToUpper(strings.TrimSpace(e.Kind))
+	if kindUpper == "" {
+		kindUpper = "CHECK"
 	}
 
-	title := fmt.Sprintf("%s %s (%s)", badge, e.SystemName, strings.ToUpper(e.Kind))
-	var lines []string
-	if e.Diagnosis != "" {
-		lines = append(lines, i18n.Pick("Diagnóstico: ", "Diagnosis: ")+e.Diagnosis)
+	var occurredStr string
+	if !e.OccurredAt.IsZero() {
+		occurredStr = e.OccurredAt.Format(i18n.Pick("02/01/2006 15:04:05", "2006-01-02 15:04:05"))
 	}
-	if e.Detail != "" {
-		lines = append(lines, i18n.Pick("Detalhe: ", "Detail: ")+e.Detail)
-	}
+
+	var mttrStr string
 	if e.ToStatus == monitor.StatusUP && mttr > 0 {
-		lines = append(lines, i18n.Pick("Duração da queda (MTTR): ", "Downtime duration (MTTR): ")+mttr.Truncate(time.Second).String())
+		mttrStr = mttr.Truncate(time.Second).String()
 	}
-	return title, strings.Join(lines, "\n")
+
+	detail := composeDetailLine(e)
+	diag := strings.TrimSpace(e.Diagnosis)
+	pub := strings.TrimRight(strings.TrimSpace(publicURL), "/")
+
+	plainTitle := fmt.Sprintf("%s [%s] %s (%s)", emoji, badge, sysName, kindUpper)
+	emailSubject := plainTitle
+	if diag != "" {
+		emailSubject += " — " + diag
+	} else if mttrStr != "" {
+		emailSubject += " — MTTR: " + mttrStr
+	}
+
+	ac := alertContext{
+		Emoji:        emoji,
+		Badge:        badge,
+		ColorHex:     colorHex,
+		ColorInt:     colorInt,
+		SystemName:   sysName,
+		KindUpper:    kindUpper,
+		URL:          strings.TrimSpace(e.URL),
+		IP:           strings.TrimSpace(e.IP),
+		TCPPort:      e.TCPPort,
+		Diagnosis:    diag,
+		Detail:       detail,
+		OccurredAt:   occurredStr,
+		MTTR:         mttrStr,
+		PublicURL:    pub,
+		IsRecovery:   e.ToStatus == monitor.StatusUP && !isTest,
+		PlainTitle:   plainTitle,
+		EmailSubject: emailSubject,
+	}
+	ac.PlainBody = formatPlainBody(ac)
+	return ac
+}
+
+func formatPlainBody(ac alertContext) string {
+	var lines []string
+	lines = append(lines, i18n.Pick("Sistema: ", "System: ")+ac.SystemName+" ["+ac.KindUpper+"]")
+	if ac.URL != "" {
+		lines = append(lines, "DNS: "+ac.URL)
+	}
+	if ac.IP != "" {
+		lines = append(lines, "IP: "+ac.IP)
+	}
+	if ac.TCPPort > 0 {
+		lines = append(lines, fmt.Sprintf("%s%d", i18n.Pick("Porta TCP: ", "TCP Port: "), ac.TCPPort))
+	}
+
+	problemLabel := i18n.Pick("Problema: ", "Issue: ")
+	if ac.IsRecovery {
+		problemLabel = "Status: "
+	}
+	if ac.Diagnosis != "" {
+		lines = append(lines, "", problemLabel+ac.Diagnosis)
+	}
+	if ac.Detail != "" {
+		lines = append(lines, i18n.Pick("Detalhe: ", "Detail: ")+ac.Detail)
+	}
+	if ac.MTTR != "" {
+		lines = append(lines, i18n.Pick("Duração da queda (MTTR): ", "Downtime (MTTR): ")+ac.MTTR)
+	}
+	if ac.OccurredAt != "" {
+		lines = append(lines, i18n.Pick("Horário: ", "Time: ")+ac.OccurredAt)
+	}
+	if ac.PublicURL != "" {
+		lines = append(lines, "", i18n.Pick("Painel: ", "Dashboard: ")+ac.PublicURL)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatTelegramHTML(ac alertContext) string {
+	esc := html.EscapeString
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "%s <b>%s — %s</b> <code>[%s]</code>\n\n",
+		ac.Emoji, esc(ac.Badge), esc(ac.SystemName), esc(ac.KindUpper))
+
+	fmt.Fprintf(&b, "<b>%s:</b> %s\n", i18n.Pick("Sistema", "System"), esc(ac.SystemName))
+	if ac.URL != "" {
+		fmt.Fprintf(&b, "<b>DNS:</b> <code>%s</code>\n", esc(ac.URL))
+	}
+	if ac.IP != "" {
+		fmt.Fprintf(&b, "<b>IP:</b> <code>%s</code>\n", esc(ac.IP))
+	}
+	if ac.TCPPort > 0 {
+		fmt.Fprintf(&b, "<b>%s:</b> <code>%d</code>\n", i18n.Pick("Porta TCP", "TCP Port"), ac.TCPPort)
+	}
+
+	problemLabel := i18n.Pick("Problema", "Issue")
+	if ac.IsRecovery {
+		problemLabel = "Status"
+	}
+	if ac.Diagnosis != "" || ac.Detail != "" || ac.MTTR != "" || ac.OccurredAt != "" {
+		b.WriteByte('\n')
+	}
+	if ac.Diagnosis != "" {
+		fmt.Fprintf(&b, "<b>%s:</b> %s\n", problemLabel, esc(ac.Diagnosis))
+	}
+	if ac.Detail != "" {
+		fmt.Fprintf(&b, "<b>%s:</b> <code>%s</code>\n", i18n.Pick("Detalhe", "Detail"), esc(ac.Detail))
+	}
+	if ac.MTTR != "" {
+		fmt.Fprintf(&b, "<b>%s:</b> <code>%s</code>\n", i18n.Pick("Duração da queda (MTTR)", "Downtime (MTTR)"), esc(ac.MTTR))
+	}
+	if ac.OccurredAt != "" {
+		fmt.Fprintf(&b, "<b>%s:</b> %s\n", i18n.Pick("Horário", "Time"), esc(ac.OccurredAt))
+	}
+	if ac.PublicURL != "" {
+		fmt.Fprintf(&b, "\n<a href=\"%s\">%s</a>", esc(ac.PublicURL), esc(i18n.Pick("Abrir no Argus", "Open in Argus")))
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func formatEmailHTML(ac alertContext) string {
+	esc := html.EscapeString
+	var rows strings.Builder
+	addRow := func(label, value string, mono bool) {
+		if value == "" {
+			return
+		}
+		valHTML := esc(value)
+		if mono {
+			valHTML = fmt.Sprintf(`<code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;color:#0f172a;">%s</code>`, valHTML)
+		}
+		fmt.Fprintf(&rows,
+			`<tr><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:13px;width:150px;vertical-align:top;">%s</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;color:#0f172a;font-size:13px;font-weight:500;">%s</td></tr>`,
+			esc(label), valHTML)
+	}
+
+	addRow(i18n.Pick("Sistema", "System"), ac.SystemName, false)
+	addRow(i18n.Pick("Camada", "Layer"), ac.KindUpper, true)
+	addRow("DNS", ac.URL, true)
+	addRow("IP", ac.IP, true)
+	if ac.TCPPort > 0 {
+		addRow(i18n.Pick("Porta TCP", "TCP Port"), fmt.Sprintf("%d", ac.TCPPort), true)
+	}
+	addRow(i18n.Pick("Duração (MTTR)", "Downtime (MTTR)"), ac.MTTR, true)
+	addRow(i18n.Pick("Horário", "Time"), ac.OccurredAt, false)
+
+	var diagBlock string
+	if ac.Diagnosis != "" || ac.Detail != "" {
+		problemLabel := i18n.Pick("Problema identificado", "Detected issue")
+		if ac.IsRecovery {
+			problemLabel = i18n.Pick("Status atual", "Current status")
+		}
+		var detailHTML string
+		if ac.Detail != "" {
+			detailHTML = fmt.Sprintf(`<div style="margin-top:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#475569;">%s</div>`, esc(ac.Detail))
+		}
+		diagText := ac.Diagnosis
+		if diagText == "" {
+			diagText = ac.Badge
+		}
+		diagBlock = fmt.Sprintf(
+			`<div style="background:#f8fafc;border-left:4px solid %s;padding:12px 14px;border-radius:4px;margin-bottom:18px;"><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#64748b;margin-bottom:4px;">%s</div><div style="font-size:15px;font-weight:600;color:#0f172a;">%s</div>%s</div>`,
+			ac.ColorHex, esc(problemLabel), esc(diagText), detailHTML)
+	}
+
+	var ctaBlock string
+	if ac.PublicURL != "" {
+		ctaBlock = fmt.Sprintf(
+			`<div style="margin-top:20px;"><a href="%s" style="display:inline-block;background:%s;color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;padding:10px 16px;border-radius:6px;">%s</a></div>`,
+			esc(ac.PublicURL), ac.ColorHex, esc(i18n.Pick("Abrir no Argus", "Open in Argus")))
+	}
+
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:20px;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <div style="max-width:580px;margin:0 auto;background:#ffffff;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0;">
+    <div style="background:%s;color:#ffffff;padding:16px 20px;">
+      <div style="font-size:12px;font-weight:600;letter-spacing:0.06em;opacity:0.9;">%s %s · %s</div>
+      <div style="font-size:20px;font-weight:700;margin-top:4px;">%s</div>
+    </div>
+    <div style="padding:20px;">
+      %s
+      <table style="width:100%%;border-collapse:collapse;">%s</table>
+      %s
+    </div>
+    <div style="padding:12px 20px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8;">Argus Monitor</div>
+  </div>
+</body>
+</html>`, ac.ColorHex, ac.Emoji, esc(ac.Badge), esc(ac.KindUpper), esc(ac.SystemName), diagBlock, rows.String(), ctaBlock)
+}
+
+func buildSlackPayload(ac alertContext) map[string]any {
+	var lines []string
+	lines = append(lines, fmt.Sprintf("*%s:* %s (`%s`)", i18n.Pick("Sistema", "System"), ac.SystemName, ac.KindUpper))
+	if ac.URL != "" {
+		lines = append(lines, fmt.Sprintf("*DNS:* `%s`", ac.URL))
+	}
+	if ac.IP != "" {
+		lines = append(lines, fmt.Sprintf("*IP:* `%s`", ac.IP))
+	}
+	if ac.TCPPort > 0 {
+		lines = append(lines, fmt.Sprintf("*%s:* `%d`", i18n.Pick("Porta TCP", "TCP Port"), ac.TCPPort))
+	}
+	if ac.Diagnosis != "" {
+		label := i18n.Pick("Problema", "Issue")
+		if ac.IsRecovery {
+			label = "Status"
+		}
+		lines = append(lines, fmt.Sprintf("*%s:* %s", label, ac.Diagnosis))
+	}
+	if ac.Detail != "" {
+		lines = append(lines, fmt.Sprintf("*%s:* `%s`", i18n.Pick("Detalhe", "Detail"), ac.Detail))
+	}
+	if ac.MTTR != "" {
+		lines = append(lines, fmt.Sprintf("*MTTR:* `%s`", ac.MTTR))
+	}
+	if ac.OccurredAt != "" {
+		lines = append(lines, fmt.Sprintf("*%s:* %s", i18n.Pick("Horário", "Time"), ac.OccurredAt))
+	}
+	if ac.PublicURL != "" {
+		lines = append(lines, fmt.Sprintf("<%s|%s>", ac.PublicURL, i18n.Pick("Abrir no Argus", "Open in Argus")))
+	}
+
+	return map[string]any{
+		"text": ac.PlainTitle,
+		"attachments": []map[string]any{
+			{
+				"color":     ac.ColorHex,
+				"title":     ac.PlainTitle,
+				"text":      strings.Join(lines, "\n"),
+				"mrkdwn_in": []string{"text"},
+				"footer":    "Argus Monitor",
+			},
+		},
+	}
+}
+
+func buildDiscordPayload(ac alertContext, occurredAt time.Time) map[string]any {
+	fields := []map[string]any{
+		{"name": i18n.Pick("Sistema", "System"), "value": ac.SystemName, "inline": true},
+		{"name": i18n.Pick("Camada", "Layer"), "value": fmt.Sprintf("`%s`", ac.KindUpper), "inline": true},
+	}
+	if ac.URL != "" {
+		fields = append(fields, map[string]any{"name": "DNS", "value": fmt.Sprintf("`%s`", ac.URL), "inline": false})
+	}
+	if ac.IP != "" {
+		fields = append(fields, map[string]any{"name": "IP", "value": fmt.Sprintf("`%s`", ac.IP), "inline": true})
+	}
+	if ac.TCPPort > 0 {
+		fields = append(fields, map[string]any{"name": i18n.Pick("Porta TCP", "TCP Port"), "value": fmt.Sprintf("`%d`", ac.TCPPort), "inline": true})
+	}
+	if ac.Detail != "" {
+		fields = append(fields, map[string]any{"name": i18n.Pick("Detalhe", "Detail"), "value": fmt.Sprintf("`%s`", ac.Detail), "inline": false})
+	}
+	if ac.MTTR != "" {
+		fields = append(fields, map[string]any{"name": i18n.Pick("Duração (MTTR)", "Downtime (MTTR)"), "value": fmt.Sprintf("`%s`", ac.MTTR), "inline": true})
+	}
+
+	embed := map[string]any{
+		"title":  ac.PlainTitle,
+		"color":  ac.ColorInt,
+		"fields": fields,
+		"footer": map[string]string{"text": "Argus Monitor"},
+	}
+	if ac.Diagnosis != "" {
+		embed["description"] = ac.Diagnosis
+	}
+	if ac.PublicURL != "" {
+		embed["url"] = ac.PublicURL
+	}
+	if !occurredAt.IsZero() {
+		embed["timestamp"] = occurredAt.UTC().Format(time.RFC3339)
+	}
+
+	return map[string]any{
+		"embeds": []map[string]any{embed},
+	}
 }

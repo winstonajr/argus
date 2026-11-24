@@ -45,10 +45,16 @@ type ChangeEvent struct {
 	SystemID      string
 	SystemName    string
 	Kind          string // "dns" or "ip"
+	URL           string
+	IP            string
+	TCPPort       int
 	FromStatus    Status
 	ToStatus      Status
 	Diagnosis     string
 	Detail        string
+	StatusCode    int
+	Latency       time.Duration
+	Error         string
 	InMaintenance bool
 	OccurredAt    time.Time
 }

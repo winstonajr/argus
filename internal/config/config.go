@@ -30,6 +30,7 @@ type Config struct {
 type AlertsConfig struct {
 	Cooldown         time.Duration       `yaml:"cooldown"`
 	NotifyOnDegraded bool                `yaml:"notify_on_degraded"`
+	PublicURL        string              `yaml:"public_url"`
 	Webhook          WebhookAlertConfig  `yaml:"webhook"`
 	Slack            SlackAlertConfig    `yaml:"slack"`
 	Discord          DiscordAlertConfig  `yaml:"discord"`
