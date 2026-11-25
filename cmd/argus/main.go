@@ -154,15 +154,11 @@ func main() {
 	webServer.SetConnectivityProvider(scheduler.ConnectivityStatus)
 	scheduler.SetOnConnectivityChange(func(st monitor.ConnectivityStatus) {
 		webServer.BroadcastConnectivity(st)
-		if st.Transitioned {
+		if st.Transitioned && !st.Offline {
 			go func(s monitor.ConnectivityStatus) {
 				ctx, cancel := context.WithTimeout(rootCtx, 10*time.Second)
 				defer cancel()
-				if s.Offline {
-					_ = notifier.SendConnectivityNotification(ctx, true, s.Since, time.Time{})
-				} else {
-					_ = notifier.SendConnectivityNotification(ctx, false, s.RecoveredFrom, s.LastChecked)
-				}
+				_ = notifier.SendConnectivityNotification(ctx, false, s.RecoveredFrom, s.LastChecked)
 			}(st)
 		}
 	})
@@ -241,15 +237,11 @@ func main() {
 		webServer.SetConnectivityProvider(scheduler.ConnectivityStatus)
 		scheduler.SetOnConnectivityChange(func(st monitor.ConnectivityStatus) {
 			webServer.BroadcastConnectivity(st)
-			if st.Transitioned {
+			if st.Transitioned && !st.Offline {
 				go func(s monitor.ConnectivityStatus) {
 					ctx, cancel := context.WithTimeout(rootCtx, 10*time.Second)
 					defer cancel()
-					if s.Offline {
-						_ = notifier.SendConnectivityNotification(ctx, true, s.Since, time.Time{})
-					} else {
-						_ = notifier.SendConnectivityNotification(ctx, false, s.RecoveredFrom, s.LastChecked)
-					}
+					_ = notifier.SendConnectivityNotification(ctx, false, s.RecoveredFrom, s.LastChecked)
 				}(st)
 			}
 		})

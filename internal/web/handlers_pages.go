@@ -316,48 +316,48 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		Offline              bool
 		OfflineLastCheckText string
 		Groups               []string
-		System           monitor.SystemSnapshot
-		WorstStatus      string
-		WorstStatusLower string
-		Diagnosis        string
-		DownDurationStr  string
-		Period           string
-		PeriodLabel      string
-		Stats            storage.SystemHistoryStats
-		MTTRStr          string
-		MTBFStr          string
-		Events           []eventViewModel
-		FailedChecks     []failedCheckViewModel
-		HasMoreFailed    bool
-		Buckets          []timelineBucketViewModel
-		LatencyChart     latencyChartViewModel
-		HTTPBreakdown    httpTraceBreakdownViewModel
+		System               monitor.SystemSnapshot
+		WorstStatus          string
+		WorstStatusLower     string
+		Diagnosis            string
+		DownDurationStr      string
+		Period               string
+		PeriodLabel          string
+		Stats                storage.SystemHistoryStats
+		MTTRStr              string
+		MTBFStr              string
+		Events               []eventViewModel
+		FailedChecks         []failedCheckViewModel
+		HasMoreFailed        bool
+		Buckets              []timelineBucketViewModel
+		LatencyChart         latencyChartViewModel
+		HTTPBreakdown        httpTraceBreakdownViewModel
 	}{
-		T:                t,
-		Title:            fmt.Sprintf("%s — %s", snap.Name, t.HistorySuffix),
-		IconsSVG:         s.iconsSVG,
-		HideSearch:       true,
-		HideNOCControls:  false,
+		T:                    t,
+		Title:                fmt.Sprintf("%s — %s", snap.Name, t.HistorySuffix),
+		IconsSVG:             s.iconsSVG,
+		HideSearch:           true,
+		HideNOCControls:      false,
 		SantaEasterEgg:       s.santaEasterEggEnabled(),
 		SeasonalThemes:       s.seasonalThemesEnabled(),
 		Offline:              connSt.Offline,
 		OfflineLastCheckText: formatOfflineLastCheck(connSt.LastChecked, t),
 		System:               snap,
-		WorstStatus:      string(snap.WorstStatus),
-		WorstStatusLower: strings.ToLower(string(snap.WorstStatus)),
-		Diagnosis:        snap.Diagnosis,
-		DownDurationStr:  downDurStr,
-		Period:           period,
-		PeriodLabel:      periodLabel,
-		Stats:            stats,
-		MTTRStr:          mttrStr,
-		MTBFStr:          mtbfStr,
-		Events:           eventVMs,
-		FailedChecks:     failedVMs,
-		HasMoreFailed:    hasMoreFailed,
-		Buckets:          bucketVMs,
-		LatencyChart:     latencyChart,
-		HTTPBreakdown:    httpBreakdown,
+		WorstStatus:          string(snap.WorstStatus),
+		WorstStatusLower:     strings.ToLower(string(snap.WorstStatus)),
+		Diagnosis:            snap.Diagnosis,
+		DownDurationStr:      downDurStr,
+		Period:               period,
+		PeriodLabel:          periodLabel,
+		Stats:                stats,
+		MTTRStr:              mttrStr,
+		MTBFStr:              mtbfStr,
+		Events:               eventVMs,
+		FailedChecks:         failedVMs,
+		HasMoreFailed:        hasMoreFailed,
+		Buckets:              bucketVMs,
+		LatencyChart:         latencyChart,
+		HTTPBreakdown:        httpBreakdown,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -558,26 +558,26 @@ func (s *Server) handlePublicStatus(w http.ResponseWriter, r *http.Request) {
 		Offline              bool
 		OfflineLastCheckText string
 		Groups               []string
-		OverallStatusLower string
-		OverallLabel       string
-		LastCheckFormatted string
-		Systems            []publicSystemVM
-		RecentIncidents    []publicIncidentVM
+		OverallStatusLower   string
+		OverallLabel         string
+		LastCheckFormatted   string
+		Systems              []publicSystemVM
+		RecentIncidents      []publicIncidentVM
 	}{
-		T:                  t,
-		Title:              t.PublicStatusTitle,
-		IconsSVG:           s.iconsSVG,
-		HideSearch:         true,
-		HideNOCControls:    true,
-		SantaEasterEgg:     s.santaEasterEggEnabled(),
-		SeasonalThemes:     s.seasonalThemesEnabled(),
-		Offline:            connSt.Offline,
+		T:                    t,
+		Title:                t.PublicStatusTitle,
+		IconsSVG:             s.iconsSVG,
+		HideSearch:           true,
+		HideNOCControls:      true,
+		SantaEasterEgg:       s.santaEasterEggEnabled(),
+		SeasonalThemes:       s.seasonalThemesEnabled(),
+		Offline:              connSt.Offline,
 		OfflineLastCheckText: formatOfflineLastCheck(connSt.LastChecked, t),
-		OverallStatusLower: overallLower,
-		OverallLabel:       overallLabel,
-		LastCheckFormatted: lastCheckStr,
-		Systems:            vms,
-		RecentIncidents:    recentIncidents,
+		OverallStatusLower:   overallLower,
+		OverallLabel:         overallLabel,
+		LastCheckFormatted:   lastCheckStr,
+		Systems:              vms,
+		RecentIncidents:      recentIncidents,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
