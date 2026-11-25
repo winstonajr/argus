@@ -557,6 +557,59 @@ func (n *Notifier) SendSLAReport(ctx context.Context, title, summary string) err
 	return err
 }
 
+// SendConnectivityNotification dispatches an internet outage or recovery notice to all configured global channels.
+func (n *Notifier) SendConnectivityNotification(ctx context.Context, offline bool, since, until time.Time) error {
+	n.mu.Lock()
+	cfg := n.cfg
+	n.mu.Unlock()
+	if !alertsEnabled(cfg) {
+		return ErrNoChannelsConfigured
+	}
+
+	var title, summary string
+	var status monitor.Status
+	if offline {
+		status = monitor.StatusDegraded
+		title = "Argus — Sem conexão com a internet"
+		when := since.Local().Format("02/01/2006 15:04:05")
+		summary = fmt.Sprintf("Monitoramento pausado às %s para evitar falsos alertas e poluição do histórico.", when)
+	} else {
+		status = monitor.StatusUP
+		title = "Argus — Conexão com a internet restabelecida"
+		dur := until.Sub(since).Truncate(time.Second)
+		if dur < 0 {
+			dur = 0
+		}
+		summary = fmt.Sprintf(
+			"A internet ficou fora do ar por %s (de %s até %s).\nMonitoramento retomado automaticamente.",
+			dur.String(),
+			since.Local().Format("02/01/2006 15:04:05"),
+			until.Local().Format("02/01/2006 15:04:05"),
+		)
+	}
+
+	ev := monitor.ChangeEvent{
+		SystemID:   "argus-connectivity",
+		SystemName: title,
+		Kind:       "connectivity",
+		ToStatus:   status,
+		Diagnosis:  title,
+		Detail:     summary,
+		OccurredAt: time.Now(),
+	}
+	ac := buildAlertContext(ev, 0, cfg.PublicURL, false)
+	if offline {
+		ac.PlainTitle = "⚠️ " + title
+		ac.EmailSubject = "⚠️ " + title
+	} else {
+		ac.PlainTitle = "✅ " + title
+		ac.EmailSubject = "✅ " + title
+	}
+	ac.PlainBody = summary
+	_, err := n.sendToChannels(ctx, cfg, ev, 0, ac)
+	return err
+}
+
 func (n *Notifier) sendNtfy(ctx context.Context, url, token string, e monitor.ChangeEvent, ac alertContext) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(ac.PlainBody))
 	if err != nil {

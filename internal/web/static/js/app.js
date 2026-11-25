@@ -1037,11 +1037,46 @@
       } catch (_) {}
     });
 
+    es.addEventListener('connectivity', function(e) {
+      try {
+        const payload = JSON.parse(e.data);
+        if (!payload) return;
+        applyConnectivityState(Boolean(payload.offline), payload.lastCheckText || '');
+      } catch (_) {}
+    });
+
     es.onerror = function() {
       const liveDot = document.getElementById('live-dot');
       if (liveDot) liveDot.classList.add('disconnected');
       if (hasGrid) startFallbackPolling();
     };
+  }
+
+  function applyConnectivityState(offline, lastCheckText) {
+    document.documentElement.classList.toggle('offline-paused', offline);
+
+    const banner = document.getElementById('offline-banner');
+    if (banner) {
+      banner.hidden = !offline;
+    }
+
+    const lastEl = document.getElementById('offline-banner-last-check');
+    if (lastEl && lastCheckText) {
+      lastEl.textContent = lastCheckText;
+    }
+
+    const liveIndicator = document.getElementById('live-indicator');
+    if (liveIndicator) {
+      liveIndicator.classList.toggle('live-indicator--paused', offline);
+    }
+
+    const liveText = document.getElementById('live-text');
+    if (liveText) {
+      const label = offline
+        ? (liveText.getAttribute('data-paused-text') || 'PAUSADO')
+        : (liveText.getAttribute('data-live-text') || 'AO VIVO');
+      liveText.textContent = label;
+    }
   }
 
   // 8. Keyboard Shortcuts & Help Modal

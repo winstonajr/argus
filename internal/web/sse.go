@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"argus/internal/i18n"
+	"argus/internal/monitor"
 )
 
 type sseEvent struct {
@@ -47,6 +48,13 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := fmt.Fprint(w, ": connected\n\n"); err != nil {
 		return
+	}
+	if st := s.connectivityStatus(); st.Offline {
+		if ev, ok := buildConnectivitySSE(st, i18n.For(lang)); ok {
+			if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Event, ev.Data); err != nil {
+				return
+			}
+		}
 	}
 	flusher.Flush()
 
@@ -130,4 +138,57 @@ func (s *Server) broadcastSystemUpdate(sysID string) {
 		}
 	}
 	s.sseMu.RUnlock()
+}
+
+// BroadcastConnectivity pushes internet connectivity status updates to connected SSE clients.
+func (s *Server) BroadcastConnectivity(st monitor.ConnectivityStatus) {
+	s.sseMu.RLock()
+	langsNeeded := make(map[string]struct{}, 2)
+	for _, lang := range s.sseClients {
+		langsNeeded[lang] = struct{}{}
+	}
+	s.sseMu.RUnlock()
+	if len(langsNeeded) == 0 {
+		return
+	}
+
+	eventsByLang := make(map[string]sseEvent, len(langsNeeded))
+	for lang := range langsNeeded {
+		if ev, ok := buildConnectivitySSE(st, i18n.For(lang)); ok {
+			eventsByLang[lang] = ev
+		}
+	}
+
+	s.sseMu.RLock()
+	for ch, lang := range s.sseClients {
+		ev, ok := eventsByLang[lang]
+		if !ok || cap(ch)-len(ch) < 1 {
+			continue
+		}
+		ch <- ev
+	}
+	s.sseMu.RUnlock()
+}
+
+func buildConnectivitySSE(st monitor.ConnectivityStatus, t i18n.Messages) (sseEvent, bool) {
+	lastText := formatOfflineLastCheck(st.LastChecked, t)
+	payload, err := json.Marshal(struct {
+		Offline       bool   `json:"offline"`
+		LastCheckText string `json:"lastCheckText"`
+	}{
+		Offline:       st.Offline,
+		LastCheckText: lastText,
+	})
+	if err != nil {
+		return sseEvent{}, false
+	}
+	return sseEvent{Event: "connectivity", Data: string(payload)}, true
+}
+
+func formatOfflineLastCheck(ts time.Time, t i18n.Messages) string {
+	timeStr := "—"
+	if !ts.IsZero() {
+		timeStr = ts.Local().Format("15:04:05")
+	}
+	return fmt.Sprintf(t.OfflineLastCheckFmt, timeStr)
 }

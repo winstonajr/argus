@@ -2200,6 +2200,118 @@ html.view-compact .cards-grid .card__telemetry {
   opacity: 1;
 }
 
+/* ==========================================================================
+   Offline / No-Internet Banner
+   ========================================================================== */
+.offline-banner {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.14) 0%, rgba(239, 68, 68, 0.10) 100%);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.45);
+  padding: 12px var(--sp-6);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+
+.offline-banner[hidden] {
+  display: none;
+}
+
+.tv-mode .offline-banner {
+  padding: 10px 20px;
+}
+
+.offline-banner__left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.offline-banner__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.16);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: var(--status-degraded);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.offline-banner__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.offline-banner__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.offline-banner__badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.2);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  color: var(--status-degraded);
+}
+
+.offline-banner__desc {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.offline-banner__right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 6px 12px;
+  border-radius: var(--radius);
+}
+
+.offline-banner__pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-degraded);
+  box-shadow: 0 0 8px var(--status-degraded);
+  flex-shrink: 0;
+}
+
+.live-indicator--paused {
+  color: var(--status-degraded);
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.live-indicator--paused .live-dot {
+  background: var(--status-degraded);
+  box-shadow: none;
+  animation: none;
+}
+
+html.offline-paused .cards-grid .card {
+  opacity: 0.72;
+}
+
 .tv-ctrl-btn,
 .tv-ctrl-val,
 .tv-exit-btn {

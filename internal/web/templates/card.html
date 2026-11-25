@@ -116,7 +116,7 @@
         <span class="tv-pill__label"><span class="tv-pill__dot"></span>DNS</span>
         <span class="tv-pill__val mono">
           {{if .DNS.HasHistory}}
-            {{if .DNS.LastResult.OK}}{{.DNSLatencyMs}}ms{{else}}{{if .DNS.LastResult.StatusCode}}{{.DNS.LastResult.StatusCode}}{{else}}OFF{{end}}{{end}}
+            {{if .DNS.LastResult.OK}}{{.DNSLatencyMs}}ms{{else}}{{if .DNS.LastResult.StatusCode}}{{.DNS.LastResult.StatusCode}}{{else if or (eq .DNS.LastResult.ErrorCat "timeout") (eq .DNS.LastResult.ErrorCat "icmp_timeout")}}TIMEOUT{{else}}OFF{{end}}{{end}}
           {{else}}…{{end}}
         </span>
       </div>
@@ -126,7 +126,7 @@
         <span class="tv-pill__label"><span class="tv-pill__dot"></span>{{if .IsIPHTTP}}HOST{{else}}IP{{end}}</span>
         <span class="tv-pill__val mono">
           {{if .IPCheck.HasHistory}}
-            {{if .IPCheck.LastResult.OK}}{{.IPLatencyMs}}ms{{else}}{{if .IPCheck.LastResult.StatusCode}}{{.IPCheck.LastResult.StatusCode}}{{else}}OFF{{end}}{{end}}
+            {{if .IPCheck.LastResult.OK}}{{.IPLatencyMs}}ms{{else}}{{if .IPCheck.LastResult.StatusCode}}{{.IPCheck.LastResult.StatusCode}}{{else if or (eq .IPCheck.LastResult.ErrorCat "timeout") (eq .IPCheck.LastResult.ErrorCat "icmp_timeout")}}TIMEOUT{{else}}OFF{{end}}{{end}}
           {{else}}…{{end}}
         </span>
       </div>

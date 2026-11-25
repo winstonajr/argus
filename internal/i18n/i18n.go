@@ -23,6 +23,11 @@ type Messages struct {
 	AllGroups               string
 	FilterByGroup           string
 	Live                    string
+	Paused                  string
+	OfflineBannerTitle      string
+	OfflineBannerBadge      string
+	OfflineBannerDesc       string
+	OfflineLastCheckFmt     string
 	SortPriorityTitle       string
 	SortActiveTitle         string
 	ViewCompactTitle        string
@@ -184,6 +189,11 @@ var ptBR = Messages{
 	StatusDegradedUpper:     "INSTÁVEL",
 	StatusDownUpper:         "FORA DO AR",
 	StatusUnknownUpper:      "SEM DADOS",
+	Paused:                  "PAUSADO",
+	OfflineBannerTitle:      "Sem conexão com a internet",
+	OfflineBannerBadge:      "Monitoramento Pausado",
+	OfflineBannerDesc:       "Checagens e alertas foram suspensos para não sujar o histórico enquanto o servidor estiver offline.",
+	OfflineLastCheckFmt:     "Última verificação: %s • Reconectando a cada 10s",
 	MaintenanceUpper:        "MANUTENÇÃO",
 	Waiting:                 "aguardando...",
 	WaitingCap:              "Aguardando...",
@@ -315,6 +325,11 @@ var enUS = Messages{
 	StatusDegradedUpper:     "DEGRADED",
 	StatusDownUpper:         "DOWN",
 	StatusUnknownUpper:      "NO DATA",
+	Paused:                  "PAUSED",
+	OfflineBannerTitle:      "No internet connection",
+	OfflineBannerBadge:      "Monitoring Paused",
+	OfflineBannerDesc:       "Checks and alerts are suspended to avoid polluting history while the server is offline.",
+	OfflineLastCheckFmt:     "Last check: %s • Reconnecting every 10s",
 	MaintenanceUpper:        "MAINTENANCE",
 	Waiting:                 "waiting...",
 	WaitingCap:              "Waiting...",

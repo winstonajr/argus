@@ -60,28 +60,34 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	connSt := s.connectivityStatus()
+
 	data := struct {
-		T               i18n.Messages
-		Title           string
-		IconsSVG        template.HTML
-		HideSearch      bool
-		HideNOCControls bool
-		SantaEasterEgg  bool
-		SeasonalThemes  bool
-		Groups          []string
-		StatsHTML       template.HTML
-		CardsHTML       template.HTML
+		T                    i18n.Messages
+		Title                string
+		IconsSVG             template.HTML
+		HideSearch           bool
+		HideNOCControls      bool
+		SantaEasterEgg       bool
+		SeasonalThemes       bool
+		Offline              bool
+		OfflineLastCheckText string
+		Groups               []string
+		StatsHTML            template.HTML
+		CardsHTML            template.HTML
 	}{
-		T:               t,
-		Title:           t.DashboardTitle,
-		IconsSVG:        s.iconsSVG,
-		HideSearch:      false,
-		HideNOCControls: false,
-		SantaEasterEgg:  s.santaEasterEggEnabled(),
-		SeasonalThemes:  s.seasonalThemesEnabled(),
-		Groups:          groups,
-		StatsHTML:       template.HTML(statsHTML),         //nolint:gosec
-		CardsHTML:       template.HTML(cardsBuf.String()), //nolint:gosec
+		T:                    t,
+		Title:                t.DashboardTitle,
+		IconsSVG:             s.iconsSVG,
+		HideSearch:           false,
+		HideNOCControls:      false,
+		SantaEasterEgg:       s.santaEasterEggEnabled(),
+		SeasonalThemes:       s.seasonalThemesEnabled(),
+		Offline:              connSt.Offline,
+		OfflineLastCheckText: formatOfflineLastCheck(connSt.LastChecked, t),
+		Groups:               groups,
+		StatsHTML:            template.HTML(statsHTML),         //nolint:gosec
+		CardsHTML:            template.HTML(cardsBuf.String()), //nolint:gosec
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -297,15 +303,19 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		downDurStr = formatDurationShort(snap.DownDuration)
 	}
 
+	connSt := s.connectivityStatus()
+
 	data := struct {
-		T                i18n.Messages
-		Title            string
-		IconsSVG         template.HTML
-		HideSearch       bool
-		HideNOCControls  bool
-		SantaEasterEgg   bool
-		SeasonalThemes   bool
-		Groups           []string
+		T                    i18n.Messages
+		Title                string
+		IconsSVG             template.HTML
+		HideSearch           bool
+		HideNOCControls      bool
+		SantaEasterEgg       bool
+		SeasonalThemes       bool
+		Offline              bool
+		OfflineLastCheckText string
+		Groups               []string
 		System           monitor.SystemSnapshot
 		WorstStatus      string
 		WorstStatusLower string
@@ -328,9 +338,11 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		IconsSVG:         s.iconsSVG,
 		HideSearch:       true,
 		HideNOCControls:  false,
-		SantaEasterEgg:   s.santaEasterEggEnabled(),
-		SeasonalThemes:   s.seasonalThemesEnabled(),
-		System:           snap,
+		SantaEasterEgg:       s.santaEasterEggEnabled(),
+		SeasonalThemes:       s.seasonalThemesEnabled(),
+		Offline:              connSt.Offline,
+		OfflineLastCheckText: formatOfflineLastCheck(connSt.LastChecked, t),
+		System:               snap,
 		WorstStatus:      string(snap.WorstStatus),
 		WorstStatusLower: strings.ToLower(string(snap.WorstStatus)),
 		Diagnosis:        snap.Diagnosis,
@@ -533,15 +545,19 @@ func (s *Server) handlePublicStatus(w http.ResponseWriter, r *http.Request) {
 		lastCheckStr = stats.LastCheck.Local().Format("02/01/2006 15:04:05")
 	}
 
+	connSt := s.connectivityStatus()
+
 	data := struct {
-		T                  i18n.Messages
-		Title              string
-		IconsSVG           template.HTML
-		HideSearch         bool
-		HideNOCControls    bool
-		SantaEasterEgg     bool
-		SeasonalThemes     bool
-		Groups             []string
+		T                    i18n.Messages
+		Title                string
+		IconsSVG             template.HTML
+		HideSearch           bool
+		HideNOCControls      bool
+		SantaEasterEgg       bool
+		SeasonalThemes       bool
+		Offline              bool
+		OfflineLastCheckText string
+		Groups               []string
 		OverallStatusLower string
 		OverallLabel       string
 		LastCheckFormatted string
@@ -555,6 +571,8 @@ func (s *Server) handlePublicStatus(w http.ResponseWriter, r *http.Request) {
 		HideNOCControls:    true,
 		SantaEasterEgg:     s.santaEasterEggEnabled(),
 		SeasonalThemes:     s.seasonalThemesEnabled(),
+		Offline:            connSt.Offline,
+		OfflineLastCheckText: formatOfflineLastCheck(connSt.LastChecked, t),
 		OverallStatusLower: overallLower,
 		OverallLabel:       overallLabel,
 		LastCheckFormatted: lastCheckStr,

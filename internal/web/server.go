@@ -44,6 +44,8 @@ type Server struct {
 	sseClients      map[chan sseEvent]string
 	triggerMu       sync.RWMutex
 	checkTrigger    func(string) bool
+	connectivityMu  sync.RWMutex
+	connectivityFn  func() monitor.ConnectivityStatus
 	notifierMu      sync.RWMutex
 	notifier        *notify.Notifier
 	manualCheckMu   sync.Mutex
@@ -293,6 +295,23 @@ func (s *Server) SetCheckTrigger(fn func(string) bool) {
 	s.triggerMu.Lock()
 	s.checkTrigger = fn
 	s.triggerMu.Unlock()
+}
+
+// SetConnectivityProvider registers a callback returning the current internet connectivity status.
+func (s *Server) SetConnectivityProvider(fn func() monitor.ConnectivityStatus) {
+	s.connectivityMu.Lock()
+	s.connectivityFn = fn
+	s.connectivityMu.Unlock()
+}
+
+func (s *Server) connectivityStatus() monitor.ConnectivityStatus {
+	s.connectivityMu.RLock()
+	fn := s.connectivityFn
+	s.connectivityMu.RUnlock()
+	if fn == nil {
+		return monitor.ConnectivityStatus{}
+	}
+	return fn()
 }
 
 // SetNotifier registers the notifier instance used for alert testing.

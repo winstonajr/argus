@@ -342,6 +342,9 @@ func (cs *checkState) evaluateNextStatus(res checker.Result) Status {
 		return StatusUP
 	}
 	cs.consecFails++
+	if res.ErrorCat == checker.CatTimeout || res.ErrorCat == checker.CatICMPTimeout {
+		return StatusDegraded
+	}
 	if cs.consecFails >= cs.failThreshold {
 		return StatusDown
 	}

@@ -133,6 +133,9 @@ func main() {
 
 	scheduler.Start(rootCtx)
 	notifier.StartEscalationLoop(rootCtx, func(sysID string) bool {
+		if scheduler.IsOffline() {
+			return false
+		}
 		snap, ok := store.GetSystem(sysID)
 		return ok && !snap.InMaintenance && snap.BlockedByID == ""
 	})
@@ -148,6 +151,21 @@ func main() {
 		os.Exit(1)
 	}
 	webServer.SetCheckTrigger(scheduler.CheckNow)
+	webServer.SetConnectivityProvider(scheduler.ConnectivityStatus)
+	scheduler.SetOnConnectivityChange(func(st monitor.ConnectivityStatus) {
+		webServer.BroadcastConnectivity(st)
+		if st.Transitioned {
+			go func(s monitor.ConnectivityStatus) {
+				ctx, cancel := context.WithTimeout(rootCtx, 10*time.Second)
+				defer cancel()
+				if s.Offline {
+					_ = notifier.SendConnectivityNotification(ctx, true, s.Since, time.Time{})
+				} else {
+					_ = notifier.SendConnectivityNotification(ctx, false, s.RecoveredFrom, s.LastChecked)
+				}
+			}(st)
+		}
+	})
 	webServer.SetNotifier(notifier)
 
 	httpSrv := &http.Server{
@@ -212,11 +230,29 @@ func main() {
 		scheduler = monitor.NewScheduler(newCfg, store, httpChecker, pingChecker)
 		scheduler.Start(rootCtx)
 		notifier.StartEscalationLoop(rootCtx, func(sysID string) bool {
+			if scheduler.IsOffline() {
+				return false
+			}
 			snap, ok := store.GetSystem(sysID)
 			return ok && !snap.InMaintenance && snap.BlockedByID == ""
 		})
 		go runSLAReportLoop(rootCtx, newCfg.Alerts.SLAReport, store, db, notifier)
 		webServer.SetCheckTrigger(scheduler.CheckNow)
+		webServer.SetConnectivityProvider(scheduler.ConnectivityStatus)
+		scheduler.SetOnConnectivityChange(func(st monitor.ConnectivityStatus) {
+			webServer.BroadcastConnectivity(st)
+			if st.Transitioned {
+				go func(s monitor.ConnectivityStatus) {
+					ctx, cancel := context.WithTimeout(rootCtx, 10*time.Second)
+					defer cancel()
+					if s.Offline {
+						_ = notifier.SendConnectivityNotification(ctx, true, s.Since, time.Time{})
+					} else {
+						_ = notifier.SendConnectivityNotification(ctx, false, s.RecoveredFrom, s.LastChecked)
+					}
+				}(st)
+			}
+		})
 		slog.Info("configuração recarregada", "systems", len(newCfg.Systems))
 	}
 
