@@ -26,6 +26,13 @@ type Messages struct {
 	SortPriorityTitle       string
 	SortActiveTitle         string
 	ViewCompactTitle        string
+	CardSizeTitle           string
+	CardSizeDecTitle        string
+	CardSizeIncTitle        string
+	CardSizeMD              string
+	CardSizeLG              string
+	CardSizeXL              string
+	CardSizeXXL             string
 	SoundMutedTitle         string
 	SoundActiveTitle        string
 	TestAlertTitle          string
@@ -129,9 +136,11 @@ type Messages struct {
 	ToastMaintDisabled      string
 	ToastCheckDone          string
 	ToastRateLimit          string
+	ToastCardSizeFmt        string
 	ShortcutsModalTitle     string
 	ShortcutSearch          string
 	ShortcutFilter          string
+	ShortcutCardSize        string
 	ShortcutTheme           string
 	ShortcutTV              string
 	ShortcutHelp            string
@@ -151,6 +160,13 @@ var ptBR = Messages{
 	SortPriorityTitle:       "Ordenar por prioridade (críticos no topo)",
 	SortActiveTitle:         "Ordem por prioridade ativa (críticos no topo) — clique para ordem manual/alfabética",
 	ViewCompactTitle:        "Alternar visualização Cards / Compacto",
+	CardSizeTitle:           "Tamanho dos cards (+ / -)",
+	CardSizeDecTitle:        "Diminuir cards (-)",
+	CardSizeIncTitle:        "Aumentar cards (+)",
+	CardSizeMD:              "Padrão",
+	CardSizeLG:              "Médio",
+	CardSizeXL:              "Grande",
+	CardSizeXXL:             "Máximo",
 	SoundMutedTitle:         "Alerta sonoro (Silenciado)",
 	SoundActiveTitle:        "Alerta sonoro (Ativo)",
 	TestAlertTitle:          "Testar envio de alertas",
@@ -254,9 +270,11 @@ var ptBR = Messages{
 	ToastMaintDisabled:      "Modo manutenção desativado",
 	ToastCheckDone:          "Verificação concluída",
 	ToastRateLimit:          "Aguarde alguns segundos antes de tentar novamente",
+	ToastCardSizeFmt:        "Tamanho dos cards: %s",
 	ShortcutsModalTitle:     "Atalhos de Teclado",
 	ShortcutSearch:          "Focar na busca / limpar filtro",
 	ShortcutFilter:          "Filtrar por status (Todos, Fora, Instável, Operacional)",
+	ShortcutCardSize:        "Aumentar / diminuir / restaurar tamanho dos cards",
 	ShortcutTheme:           "Alternar tema claro / escuro",
 	ShortcutTV:              "Alternar modo TV / NOC",
 	ShortcutHelp:            "Exibir / ocultar ajuda de atalhos",
@@ -276,6 +294,13 @@ var enUS = Messages{
 	SortPriorityTitle:       "Sort by priority (critical on top)",
 	SortActiveTitle:         "Priority sort active (critical on top) — click for manual/alphabetical order",
 	ViewCompactTitle:        "Toggle Cards / Compact view",
+	CardSizeTitle:           "Card size (+ / -)",
+	CardSizeDecTitle:        "Decrease card size (-)",
+	CardSizeIncTitle:        "Increase card size (+)",
+	CardSizeMD:              "Default",
+	CardSizeLG:              "Large",
+	CardSizeXL:              "Extra Large",
+	CardSizeXXL:             "Max",
 	SoundMutedTitle:         "Sound alert (Muted)",
 	SoundActiveTitle:        "Sound alert (Active)",
 	TestAlertTitle:          "Send test alert",
@@ -379,9 +404,11 @@ var enUS = Messages{
 	ToastMaintDisabled:      "Maintenance mode disabled",
 	ToastCheckDone:          "Check completed",
 	ToastRateLimit:          "Please wait a few seconds before retrying",
+	ToastCardSizeFmt:        "Card size: %s",
 	ShortcutsModalTitle:     "Keyboard Shortcuts",
 	ShortcutSearch:          "Focus search / clear filter",
 	ShortcutFilter:          "Filter by status (All, Down, Degraded, Operational)",
+	ShortcutCardSize:        "Increase / decrease / reset card size",
 	ShortcutTheme:           "Toggle light / dark theme",
 	ShortcutTV:              "Toggle TV / NOC mode",
 	ShortcutHelp:            "Show / hide keyboard shortcuts",

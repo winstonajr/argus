@@ -33,6 +33,11 @@
       data-toast-maint-off="{{.T.ToastMaintDisabled}}"
       data-toast-check-done="{{.T.ToastCheckDone}}"
       data-toast-rate-limit="{{.T.ToastRateLimit}}"
+      data-toast-card-size="{{.T.ToastCardSizeFmt}}"
+      data-size-md="{{.T.CardSizeMD}}"
+      data-size-lg="{{.T.CardSizeLG}}"
+      data-size-xl="{{.T.CardSizeXL}}"
+      data-size-xxl="{{.T.CardSizeXXL}}"
       data-santa-easter-egg="{{if .SantaEasterEgg}}true{{else}}false{{end}}">
   <div class="sr-sprite">
     {{.IconsSVG}}
@@ -98,6 +103,10 @@
 
       <button type="button" class="btn-icon" id="view-toggle-btn" title="{{.T.ViewCompactTitle}}" aria-label="{{.T.ViewCompactTitle}}" aria-pressed="false">
         <svg class="icon" aria-hidden="true"><use href="#icon-list"></use></svg>
+      </button>
+
+      <button type="button" class="btn-icon" id="card-size-btn" title="{{.T.CardSizeTitle}}" aria-label="{{.T.CardSizeTitle}}" aria-pressed="false">
+        <svg class="icon" aria-hidden="true"><use href="#icon-expand"></use></svg>
       </button>
       {{end}}
 
@@ -176,10 +185,14 @@
   <div id="toast-container" class="toast-container" role="status" aria-live="polite"></div>
 
   {{if not .HideNOCControls}}
-  <button type="button" id="tv-exit-btn" class="tv-exit-btn" title="{{.T.TVModeTitle}}" aria-label="{{.T.TVModeTitle}}">
-    <svg class="icon" aria-hidden="true"><use href="#icon-tv"></use></svg>
-    <span>ESC / V</span>
-  </button>
+  <div class="tv-floating-bar">
+    <button type="button" id="tv-size-dec-btn" class="tv-ctrl-btn mono" title="{{.T.CardSizeDecTitle}}" aria-label="{{.T.CardSizeDecTitle}}">−</button>
+    <button type="button" id="tv-size-inc-btn" class="tv-ctrl-btn mono" title="{{.T.CardSizeIncTitle}}" aria-label="{{.T.CardSizeIncTitle}}">+</button>
+    <button type="button" id="tv-exit-btn" class="tv-exit-btn" title="{{.T.TVModeTitle}}" aria-label="{{.T.TVModeTitle}}">
+      <svg class="icon" aria-hidden="true"><use href="#icon-tv"></use></svg>
+      <span>ESC / V</span>
+    </button>
+  </div>
 
   <div id="shortcuts-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="shortcuts-modal-title" hidden>
     <div class="modal-card">
@@ -190,6 +203,7 @@
       <div class="shortcuts-list">
         <div class="shortcut-row"><span class="kbd">/</span><span>{{.T.ShortcutSearch}}</span></div>
         <div class="shortcut-row"><span class="kbd">1 – 4</span><span>{{.T.ShortcutFilter}}</span></div>
+        <div class="shortcut-row"><span class="kbd">+ / - / 0</span><span>{{.T.ShortcutCardSize}}</span></div>
         <div class="shortcut-row"><span class="kbd">T</span><span>{{.T.ShortcutTheme}}</span></div>
         <div class="shortcut-row"><span class="kbd">V</span><span>{{.T.ShortcutTV}}</span></div>
         <div class="shortcut-row"><span class="kbd">?</span><span>{{.T.ShortcutHelp}}</span></div>

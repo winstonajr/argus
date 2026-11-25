@@ -16,7 +16,7 @@ Monitor de disponibilidade e saúde para sistemas internos, servidores e serviç
 - **Tempo real via SSE**: atualização instantânea dos cards por idioma (`/events`), ordenação por severidade ou arraste manual (drag-and-drop), checagem sob demanda, barra de 30 heartbeats e sparkline de latência.
 - **Notificações ricas multicanal**: alertas formatados de queda, instabilidade e recuperação (com diagnóstico de causa raiz, detalhes de camada/alvo, tempo total de indisponibilidade `MTTR` e link opcional para o painel) via Telegram (HTML), E-mail (multipart HTML/texto via SMTP STARTTLS `587` ou TLS implícito `465`), anexos no Slack, embeds no Discord e Webhook JSON genérico (com headers customizados), além de disparo de teste pelo painel, controle de *cooldown* e supressão em manutenção.
 - **Histórico e SLA**: persistência em SQLite (WAL) com hidratação no restart, janelas de manutenção temporizadas persistentes, linha do tempo (1h, 24h, 7d, 30d), inspeção de falhas, cálculo de MTBF/MTTR/P95 e exportação em CSV/JSON.
-- **Temas, NOC e observabilidade**: temas de cores customizados (`auto`, `dark`, `light`, `midnight`, `nord`, `warm`, `emerald`, `latte`), temas sazonais automáticos em datas comemorativas brasileiras e internacionais (`ARGUS_SEASONAL_THEMES`), interface bilíngue (`pt-BR` / `en`), fuso horário IANA configurável (`ARGUS_TIMEZONE`), grupos, modo compacto, alertas sonoros, modo TV em blocos heatmap (`?view=tv`), página pública somente leitura (`/status`), métricas Prometheus (`/metrics`), hot reload via `SIGHUP` e easter egg opcional de trenó do Papai Noel (`ARGUS_SANTA_EASTER_EGG`).
+- **Temas, NOC e observabilidade**: temas de cores customizados (`auto`, `dark`, `light`, `midnight`, `nord`, `warm`, `emerald`, `latte`), temas sazonais automáticos em datas comemorativas brasileiras e internacionais (`ARGUS_SEASONAL_THEMES`), interface bilíngue (`pt-BR` / `en`), fuso horário IANA configurável (`ARGUS_TIMEZONE`), ajuste de escala dos cards (`+` / `-` / `0` ou `?size=lg|xl|xxl`) para melhor preenchimento de tela, grupos, modo compacto, alertas sonoros, modo TV em blocos heatmap (`?view=tv`), página pública somente leitura (`/status`), métricas Prometheus (`/metrics`), hot reload via `SIGHUP` e easter egg opcional de trenó do Papai Noel (`ARGUS_SANTA_EASTER_EGG`).
 
 ## Início Rápido
 
@@ -160,6 +160,7 @@ kill -HUP $(pidof argus)
 - `2` : filtrar sistemas fora do ar (`DOWN`).
 - `3` : filtrar sistemas instáveis (`DEGRADED`).
 - `4` : filtrar sistemas operacionais (`UP`).
+- `+` / `-` / `0` : aumentar, diminuir ou restaurar o tamanho dos cards (na Home e no modo TV; também via `?size=lg|xl|xxl`).
 - `t` : alternar tema de cores.
 - `v` : alternar modo TV.
 - `?` : abrir modal de atalhos de teclado.

@@ -239,6 +239,104 @@
     } catch (_) {}
   }
 
+  const CARD_SIZES = ['md', 'lg', 'xl', 'xxl'];
+  const CARD_SIZE_KEY = 'argus-card-size';
+
+  function getCardSize() {
+    const attr = (document.documentElement.getAttribute('data-card-size') || '').toLowerCase();
+    if (CARD_SIZES.indexOf(attr) !== -1) return attr;
+    try {
+      const saved = (localStorage.getItem(CARD_SIZE_KEY) || '').toLowerCase();
+      if (CARD_SIZES.indexOf(saved) !== -1) return saved;
+    } catch (_) {}
+    return 'md';
+  }
+
+  function cardSizeLabel(size) {
+    if (size === 'lg') return dataset('sizeLg', 'Médio');
+    if (size === 'xl') return dataset('sizeXl', 'Grande');
+    if (size === 'xxl') return dataset('sizeXxl', 'Máximo');
+    return dataset('sizeMd', 'Padrão');
+  }
+
+  function syncCardSizeUI(size) {
+    const btn = document.getElementById('card-size-btn');
+    const isScaled = size !== 'md';
+    if (btn) {
+      btn.classList.toggle('active', isScaled);
+      btn.setAttribute('aria-pressed', isScaled ? 'true' : 'false');
+    }
+    const decBtn = document.getElementById('tv-size-dec-btn');
+    const incBtn = document.getElementById('tv-size-inc-btn');
+    if (decBtn) decBtn.disabled = size === 'md';
+    if (incBtn) incBtn.disabled = size === 'xxl';
+  }
+
+  function applyCardSize(nextSize, showFeedback) {
+    const size = CARD_SIZES.indexOf(nextSize) !== -1 ? nextSize : 'md';
+    if (size === 'md') {
+      document.documentElement.removeAttribute('data-card-size');
+    } else {
+      document.documentElement.setAttribute('data-card-size', size);
+    }
+    try {
+      if (size === 'md') {
+        localStorage.removeItem(CARD_SIZE_KEY);
+      } else {
+        localStorage.setItem(CARD_SIZE_KEY, size);
+      }
+    } catch (_) {}
+
+    if (showFeedback && document.documentElement.classList.contains('view-compact') && !document.documentElement.classList.contains('tv-mode')) {
+      document.documentElement.classList.remove('view-compact');
+      const viewBtn = document.getElementById('view-toggle-btn');
+      if (viewBtn) {
+        viewBtn.classList.remove('active');
+        viewBtn.setAttribute('aria-pressed', 'false');
+      }
+      try {
+        localStorage.setItem('argus-view', 'cards');
+      } catch (_) {}
+    }
+
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.has('size') || document.documentElement.classList.contains('tv-mode')) {
+        if (size === 'md') {
+          url.searchParams.delete('size');
+        } else {
+          url.searchParams.set('size', size);
+        }
+        window.history.replaceState(null, '', url.toString());
+      }
+    } catch (_) {}
+
+    syncCardSizeUI(size);
+    if (showFeedback) {
+      const tpl = dataset('toastCardSize', 'Tamanho dos cards: %s');
+      showToast(tpl.replace('%s', cardSizeLabel(size)));
+    }
+  }
+
+  function stepCardSize(delta) {
+    if (!document.getElementById('cards-grid')) return;
+    const cur = getCardSize();
+    const idx = CARD_SIZES.indexOf(cur);
+    const nextIdx = Math.max(0, Math.min(CARD_SIZES.length - 1, (idx === -1 ? 0 : idx) + delta));
+    const next = CARD_SIZES[nextIdx];
+    if (next !== cur) {
+      applyCardSize(next, true);
+    }
+  }
+
+  function cycleCardSize() {
+    if (!document.getElementById('cards-grid')) return;
+    const cur = getCardSize();
+    const idx = CARD_SIZES.indexOf(cur);
+    const next = CARD_SIZES[((idx === -1 ? 0 : idx) + 1) % CARD_SIZES.length];
+    applyCardSize(next, true);
+  }
+
   function toggleLanguage() {
     const currentLang = (document.documentElement.getAttribute('lang') || 'pt-BR').toLowerCase();
     const nextLang = currentLang.startsWith('en') ? 'pt-BR' : 'en';
@@ -962,6 +1060,17 @@
       if (document.getElementById('tv-toggle-btn')) {
         toggleTVMode();
       }
+    } else if ((e.key === '+' || e.key === '=') && document.getElementById('cards-grid')) {
+      e.preventDefault();
+      stepCardSize(1);
+    } else if ((e.key === '-' || e.key === '_') && document.getElementById('cards-grid')) {
+      e.preventDefault();
+      stepCardSize(-1);
+    } else if (e.key === '0' && document.getElementById('cards-grid')) {
+      if (getCardSize() !== 'md') {
+        e.preventDefault();
+        applyCardSize('md', true);
+      }
     } else if (e.key === '1') {
       setFilter('all');
     } else if (e.key === '2') {
@@ -1415,6 +1524,7 @@
     initAutoHideScrollbar();
     initTVMode();
     initViewMode();
+    syncCardSizeUI(getCardSize());
     initSound();
     seedInitialStatuses();
     initSortMode();
@@ -1435,6 +1545,15 @@
 
     const viewBtn = document.getElementById('view-toggle-btn');
     if (viewBtn) viewBtn.addEventListener('click', toggleViewMode);
+
+    const cardSizeBtn = document.getElementById('card-size-btn');
+    if (cardSizeBtn) cardSizeBtn.addEventListener('click', cycleCardSize);
+
+    const tvSizeDecBtn = document.getElementById('tv-size-dec-btn');
+    if (tvSizeDecBtn) tvSizeDecBtn.addEventListener('click', function() { stepCardSize(-1); });
+
+    const tvSizeIncBtn = document.getElementById('tv-size-inc-btn');
+    if (tvSizeIncBtn) tvSizeIncBtn.addEventListener('click', function() { stepCardSize(1); });
 
     const soundBtn = document.getElementById('sound-toggle-btn');
     if (soundBtn) soundBtn.addEventListener('click', toggleSound);

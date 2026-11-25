@@ -96,7 +96,7 @@ docker compose up -d
 - **SSL/TLS Expiration Monitoring**: Automatically inspects TLS certificates on HTTPS targets, flags `DEGRADED` before expiration (`tls_warn_days`), and `DOWN` when expired.
 - **Rich Multi-Channel Notifications**: Formatted alerts for outages, degraded states, and recoveries (with root-cause diagnosis, layer/target metadata, MTTR downtime duration, and optional `ARGUS_PUBLIC_URL` dashboard CTA) via Telegram (HTML), Email (multipart HTML/plain via SMTP STARTTLS on `587` or implicit TLS on `465`), Slack attachments, Discord embeds, and Generic JSON Webhook (with custom headers), plus one-click test alerts, anti-flapping cooldown, and maintenance suppression.
 - **Self-Contained Storage & SLA History**: Embedded pure-Go SQLite (WAL mode) with startup state hydration, persisted timed maintenance windows, clickable external target links on history pages, 1h/24h/7d/30d timeline views, paginated failed-check logs, MTBF/MTTR/P95 metrics, and formula-safe CSV/JSON export.
-- **Themes, NOC / TV Mode, i18n & Public Status**: Custom color themes (`auto`, `dark`, `light`, `midnight`, `nord`, `warm`, `emerald`, `latte`), automatic Brazilian & international seasonal holiday themes (`ARGUS_SEASONAL_THEMES`), bilingual UI (`pt-BR` / `en`), configurable IANA timezone (`server.timezone` / `ARGUS_TIMEZONE`), system groups, compact table view, optional sound alerts, high-density TV heatmap tiles (`?view=tv` with quick `ESC` / `V` or button exit), read-only public status page (`/status`), Prometheus metrics (`/metrics`), `SIGHUP` hot config reload, and an optional Santa sleigh & snow easter egg when all systems are down.
+- **Themes, NOC / TV Mode, i18n & Public Status**: Custom color themes (`auto`, `dark`, `light`, `midnight`, `nord`, `warm`, `emerald`, `latte`), automatic Brazilian & international seasonal holiday themes (`ARGUS_SEASONAL_THEMES`), bilingual UI (`pt-BR` / `en`), configurable IANA timezone (`server.timezone` / `ARGUS_TIMEZONE`), adjustable card scaling (`+` / `-` / `0`, UI controls, or `?size=lg|xl|xxl`) to fill widescreen and NOC walls, system groups, compact table view, optional sound alerts, high-density TV heatmap tiles (`?view=tv` with quick `ESC` / `V` or button exit), read-only public status page (`/status`), Prometheus metrics (`/metrics`), `SIGHUP` hot config reload, and an optional Santa sleigh & snow easter egg when all systems are down.
 - **Optional Authentication & Hardening**: Optional HTTP Basic Auth and Bearer / `X-Argus-Token` API authentication (keeping `/status`, `/healthz`, and `/metrics` public), strict CSP, and gzip/ETag static caching.
 - **Environment & Variable Interpolation**: Native support for `.env` files, `${VAR:-default}` placeholders in YAML, and `ARGUS_*` overrides.
 
@@ -172,7 +172,7 @@ docker kill -s HUP argus
 
 | Endpoint | Description |
 |---|---|
-| `GET /` | NOC Operations Dashboard (add `?view=tv` for TV heatmap mode) |
+| `GET /` | NOC Operations Dashboard (add `?view=tv` for TV heatmap mode, `?size=lg\|xl\|xxl` for larger cards) |
 | `GET /events` | Real-time Server-Sent Events (SSE) stream |
 | `GET /status` | Public read-only status page (hides internal IPs) |
 | `GET /systems/{id}/history` | Diagnosis, timeline, incidents, MTBF/MTTR/P95 & SLA |

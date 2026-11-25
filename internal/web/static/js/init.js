@@ -65,7 +65,25 @@
     savedTheme = null;
   }
   document.documentElement.setAttribute('data-theme', resolveTheme(savedTheme));
-  if (window.location.pathname === '/' && new URLSearchParams(window.location.search).get('view') === 'tv') {
+  var params = new URLSearchParams(window.location.search);
+  var validSizes = { md: 1, lg: 1, xl: 1, xxl: 1 };
+  var urlSize = (params.get('size') || '').toLowerCase();
+  var cardSize = validSizes[urlSize] ? urlSize : '';
+  if (!cardSize) {
+    try {
+      var savedSize = (localStorage.getItem('argus-card-size') || '').toLowerCase();
+      if (validSizes[savedSize]) cardSize = savedSize;
+    } catch (_) {}
+  } else {
+    try {
+      if (cardSize === 'md') localStorage.removeItem('argus-card-size');
+      else localStorage.setItem('argus-card-size', cardSize);
+    } catch (_) {}
+  }
+  if (cardSize && cardSize !== 'md') {
+    document.documentElement.setAttribute('data-card-size', cardSize);
+  }
+  if (window.location.pathname === '/' && params.get('view') === 'tv') {
     document.documentElement.classList.add('tv-mode');
   }
   if (localStorage.getItem('argus-view') === 'compact') {
