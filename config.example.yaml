@@ -26,6 +26,7 @@ defaults:
 alerts:
   cooldown: 5m
   notify_on_degraded: false
+  # public_url: "${ARGUS_PUBLIC_URL:-}"
   # webhook:
   #   url: "${ARGUS_ALERTS_WEBHOOK_URL:-}"
   # slack:

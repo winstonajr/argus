@@ -2,7 +2,7 @@
 
 English | [Português](README.pt-BR.md)
 
-[![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square&logo=go)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go)](https://golang.org)
 [![Docker Pulls](https://img.shields.io/docker/pulls/winajr/argus?style=flat-square&color=blue)](https://hub.docker.com/r/winajr/argus)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 
@@ -10,13 +10,13 @@ Lightweight availability and health-check monitor for internal systems, servers,
 
 ## Features
 
-- **Cross-layer checks**: tests DNS/HTTP endpoints (configurable HTTP methods, custom headers, `expected_status`, `expected_body`, `json_path`, and `expected_dns`) alongside direct host reachability (ICMP ping, TCP port, or internal HTTP).
+- **Cross-layer checks**: tests DNS/HTTP endpoints (configurable HTTP methods, custom headers, `expected_status`, `expected_body` substring or `/regex/`, `json_path`, and `expected_dns`) alongside direct host reachability (ICMP ping, TCP port, or internal HTTP).
 - **Root-cause diagnosis**: correlates check states to distinguish DNS failures, TLS certificate errors, Cloudflare edge errors (`502`, `520`–`526`), application outages, or full VM/network downtime.
 - **SSL/TLS monitoring**: inspects HTTPS certificate expiration and flags `DEGRADED` ahead of expiry (`tls_warn_days`) and `DOWN` once expired.
-- **Real-time updates via SSE**: instant card updates (`/events`), automatic severity-based sorting, 30-slot heartbeat bar, and latency sparkline.
-- **Notifications**: outage and recovery alerts via generic Webhook, Slack, Discord, Telegram, and Email (SMTP), with cooldown control and maintenance suppression.
-- **History & SLA**: embedded SQLite (WAL mode) with startup state hydration, 1h/24h/7d/30d timelines, MTBF/MTTR/P95 metrics, and CSV/JSON export.
-- **Operations & observability**: dark/light themes, system groups, compact table view, TV mode (`?view=tv`), read-only public status page (`/status`), Prometheus metrics (`/metrics`), and `SIGHUP` hot config reload.
+- **Real-time updates via SSE**: instant per-language card updates (`/events`), priority sorting or manual drag-and-drop ordering, on-demand check triggers, 30-slot heartbeat bar, and latency sparkline.
+- **Rich multi-channel notifications**: formatted outage, degraded, and recovery alerts (with root-cause diagnosis, layer/target metadata, MTTR downtime duration, and optional dashboard link) via Telegram (HTML), Email (multipart HTML/text over SMTP STARTTLS `587` or implicit TLS `465`), Slack attachments, Discord embeds, and generic JSON Webhook (with custom headers), plus one-click test alerts, cooldown control, and maintenance suppression.
+- **History & SLA**: embedded SQLite (WAL mode) with startup state hydration, persisted timed maintenance windows, 1h/24h/7d/30d timelines, failed-check inspection, MTBF/MTTR/P95 metrics, and CSV/JSON export.
+- **Themes, NOC & observability**: custom color themes (`auto`, `dark`, `light`, `midnight`, `nord`, `warm`, `emerald`, `latte`), automatic seasonal themes on commemorative dates (`ARGUS_SEASONAL_THEMES`), bilingual UI (`pt-BR` / `en`), configurable IANA timezone (`ARGUS_TIMEZONE`), system groups, compact table view, sound alerts, TV heatmap mode (`?view=tv`), read-only public status page (`/status`), Prometheus metrics (`/metrics`), `SIGHUP` hot config reload, and optional Santa sleigh easter egg (`ARGUS_SANTA_EASTER_EGG`).
 
 ## Quick Start
 
@@ -46,7 +46,7 @@ docker run -d \
 ### Running with Go
 
 Prerequisites:
-- Go 1.22+
+- Go 1.26+
 - Raw socket capability for ICMP ping on Linux (optional if using HTTP/TCP checks only):
   ```bash
   sudo setcap cap_net_raw+ep ./bin/argus
@@ -74,6 +74,7 @@ Configuration precedence: **Environment Variables > YAML File > Built-in Default
 | `ARGUS_SERVER_ADDR` | `:8080` | HTTP listen address and port (or `PORT=8080`) |
 | `ARGUS_LANG` | `pt-BR` | UI, diagnosis, and alert language (`pt-BR` or `en`) |
 | `ARGUS_TIMEZONE` | System local (`TZ`) | IANA timezone for displayed timestamps (e.g. `America/Sao_Paulo`, `UTC`; YAML: `server.timezone`) |
+| `ARGUS_SEASONAL_THEMES` | `true` | Automatic holiday/seasonal themes when theme choice is `auto` (YAML: `server.seasonal_themes`) |
 | `ARGUS_SANTA_EASTER_EGG` | `false` | Enables snow and Santa sleigh with 9 reindeer when all systems are `DOWN` (YAML: `server.santa_easter_egg`) |
 | `ARGUS_SERVER_AUTH_USERNAME` | `admin` | Basic Auth username (active when password is set) |
 | `ARGUS_SERVER_AUTH_PASSWORD` | — | Basic Auth password (protects UI/API; `/status`, `/healthz`, `/metrics` remain public) |
@@ -90,6 +91,7 @@ Configuration precedence: **Environment Variables > YAML File > Built-in Default
 | `ARGUS_DEFAULTS_TLS_WARN_DAYS` | `15` | Days before TLS expiry to flag `DEGRADED` |
 | `ARGUS_ALERTS_COOLDOWN` | `5m` | Minimum interval between repeated alerts |
 | `ARGUS_ALERTS_NOTIFY_ON_DEGRADED` | `false` | Send notifications on `DEGRADED` transitions |
+| `ARGUS_PUBLIC_URL` | — | External dashboard URL included as a link/CTA in alert messages (YAML: `alerts.public_url`) |
 | `ARGUS_ALERTS_WEBHOOK_URL` | — | Generic JSON POST Webhook URL |
 | `ARGUS_ALERTS_SLACK_WEBHOOK_URL` | — | Slack Incoming Webhook URL |
 | `ARGUS_ALERTS_DISCORD_WEBHOOK_URL` | — | Discord Webhook URL |
@@ -135,27 +137,32 @@ kill -HUP $(pidof argus)
 
 | Route | Description |
 |---|---|
-| `GET /` | NOC operations dashboard |
+| `GET /` | NOC operations dashboard (`?view=tv` for TV heatmap mode) |
+| `GET /events` | Server-Sent Events (SSE) real-time update stream |
 | `GET /status` | Public read-only status page (hides internal IPs) |
-| `GET /systems/{id}/history` | History, timeline, and SLA metrics (1h, 24h, 7d, 30d) |
+| `GET /systems/{id}/history` | History, diagnosis, timeline, and SLA metrics (1h, 24h, 7d, 30d) |
 | `GET /systems/{id}/export` | Export history (`?period=30d&format=csv` or `json`) |
 | `GET /api/systems` | List all systems in JSON |
 | `GET /api/systems/{id}` | Single system details in JSON |
+| `GET /api/systems/{id}/failed-checks` | Paginated failed check logs (`?period=24h&offset=0`) |
+| `POST /api/systems/{id}/check` | Trigger an immediate on-demand check |
+| `POST /api/systems/{id}/maintenance` | Toggle or schedule maintenance mode (`?enabled=true&duration=1h`) |
+| `POST /api/alerts/test` | Send a test alert to all configured notification channels |
 | `GET /api/events` | Recent status change events |
-| `POST /api/systems/{id}/maintenance` | Toggle maintenance mode at runtime |
 | `GET /metrics` | Prometheus metrics |
 | `GET /healthz` | Application and SQLite healthcheck |
 
 ## Keyboard Shortcuts
 
 - `/` : focus search input.
-- `Esc` : clear search and blur.
+- `Esc` : clear search, close modal, or exit TV mode.
 - `1` : filter all systems.
 - `2` : filter `DOWN` systems.
 - `3` : filter `DEGRADED` systems.
 - `4` : filter `UP` systems.
-- `t` : toggle dark/light theme.
+- `t` : cycle/toggle color theme.
 - `v` : toggle TV mode.
+- `?` : open keyboard shortcuts modal.
 
 ## Development and Testing
 

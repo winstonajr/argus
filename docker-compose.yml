@@ -16,6 +16,7 @@ services:
       - ARGUS_LANG=${ARGUS_LANG:-pt-BR} # "pt-BR" or "en"
       - ARGUS_TIMEZONE=${ARGUS_TIMEZONE:-America/Sao_Paulo} # IANA timezone (e.g. America/Sao_Paulo, UTC)
       - ARGUS_SEASONAL_THEMES=${ARGUS_SEASONAL_THEMES:-true} # Automatic seasonal themes on holidays
+      # - ARGUS_SANTA_EASTER_EGG=false
       # Optional authentication (protects dashboard & API while keeping /status, /healthz, /metrics public)
       # - ARGUS_SERVER_AUTH_USERNAME=admin
       # - ARGUS_SERVER_AUTH_PASSWORD=secret
@@ -24,6 +25,7 @@ services:
       # - ARGUS_DEFAULTS_TLS_WARN_DAYS=15
       # - ARGUS_ALERTS_COOLDOWN=5m
       # - ARGUS_ALERTS_NOTIFY_ON_DEGRADED=false
+      # - ARGUS_PUBLIC_URL=https://status.example.com
       # - ARGUS_ALERTS_WEBHOOK_URL=https://hooks.example.com/argus
       # - ARGUS_ALERTS_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
       # - ARGUS_ALERTS_DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
