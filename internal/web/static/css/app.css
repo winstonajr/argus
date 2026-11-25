@@ -456,7 +456,6 @@ html:not(.tv-mode)[data-card-zoom="300"], html.tv-mode[data-tv-zoom="300"] { --c
 :root {
   --cz-ui: calc(0.4 + 0.6 * var(--cz));
   --card-min-w: calc(320px * var(--cz));
-  --card-max-w: calc(400px * var(--cz));
   --card-grid-gap: clamp(8px, calc(20px * var(--cz-ui)), 44px);
   --card-pad-y: clamp(8px, calc(16px * var(--cz-ui)), 36px);
   --card-pad-x: clamp(10px, calc(20px * var(--cz-ui)), 44px);
@@ -475,7 +474,6 @@ html:not(.tv-mode)[data-card-zoom="300"], html.tv-mode[data-tv-zoom="300"] { --c
   --card-footer-fs: clamp(10px, calc(12px * var(--cz-ui)), 24px);
 
   --tv-card-min-w: calc(150px * var(--cz));
-  --tv-card-max-w: calc(210px * var(--cz));
   --tv-grid-gap: clamp(6px, calc(10px * var(--cz-ui)), 22px);
   --tv-card-pad: clamp(6px, calc(12px * var(--cz-ui)), 26px);
   --tv-card-gap: clamp(4px, calc(8px * var(--cz-ui)), 18px);
@@ -494,7 +492,7 @@ html:not(.tv-mode)[data-card-zoom="300"], html.tv-mode[data-tv-zoom="300"] { --c
 
 .cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--card-min-w)), min(100%, var(--card-max-w))));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--card-min-w)), 1fr));
   gap: var(--card-grid-gap);
 }
 
@@ -1268,7 +1266,7 @@ html:not(.tv-mode)[data-card-zoom="300"], html.tv-mode[data-tv-zoom="300"] { --c
 }
 
 .tv-mode .cards-grid {
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--tv-card-min-w)), min(100%, var(--tv-card-max-w))));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--tv-card-min-w)), 1fr));
   gap: var(--tv-grid-gap);
 }
 
