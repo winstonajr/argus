@@ -29,10 +29,7 @@ type Messages struct {
 	CardSizeTitle           string
 	CardSizeDecTitle        string
 	CardSizeIncTitle        string
-	CardSizeMD              string
-	CardSizeLG              string
-	CardSizeXL              string
-	CardSizeXXL             string
+	CardSizeResetTitle      string
 	SoundMutedTitle         string
 	SoundActiveTitle        string
 	TestAlertTitle          string
@@ -160,13 +157,10 @@ var ptBR = Messages{
 	SortPriorityTitle:       "Ordenar por prioridade (críticos no topo)",
 	SortActiveTitle:         "Ordem por prioridade ativa (críticos no topo) — clique para ordem manual/alfabética",
 	ViewCompactTitle:        "Alternar visualização Cards / Compacto",
-	CardSizeTitle:           "Tamanho dos cards (+ / -)",
+	CardSizeTitle:           "Zoom dos cards (+ / - / 0)",
 	CardSizeDecTitle:        "Diminuir cards (-)",
 	CardSizeIncTitle:        "Aumentar cards (+)",
-	CardSizeMD:              "Padrão",
-	CardSizeLG:              "Médio",
-	CardSizeXL:              "Grande",
-	CardSizeXXL:             "Máximo",
+	CardSizeResetTitle:      "Restaurar tamanho padrão (0)",
 	SoundMutedTitle:         "Alerta sonoro (Silenciado)",
 	SoundActiveTitle:        "Alerta sonoro (Ativo)",
 	TestAlertTitle:          "Testar envio de alertas",
@@ -270,7 +264,7 @@ var ptBR = Messages{
 	ToastMaintDisabled:      "Modo manutenção desativado",
 	ToastCheckDone:          "Verificação concluída",
 	ToastRateLimit:          "Aguarde alguns segundos antes de tentar novamente",
-	ToastCardSizeFmt:        "Tamanho dos cards: %s",
+	ToastCardSizeFmt:        "Zoom dos cards: %s",
 	ShortcutsModalTitle:     "Atalhos de Teclado",
 	ShortcutSearch:          "Focar na busca / limpar filtro",
 	ShortcutFilter:          "Filtrar por status (Todos, Fora, Instável, Operacional)",
@@ -294,13 +288,10 @@ var enUS = Messages{
 	SortPriorityTitle:       "Sort by priority (critical on top)",
 	SortActiveTitle:         "Priority sort active (critical on top) — click for manual/alphabetical order",
 	ViewCompactTitle:        "Toggle Cards / Compact view",
-	CardSizeTitle:           "Card size (+ / -)",
-	CardSizeDecTitle:        "Decrease card size (-)",
-	CardSizeIncTitle:        "Increase card size (+)",
-	CardSizeMD:              "Default",
-	CardSizeLG:              "Large",
-	CardSizeXL:              "Extra Large",
-	CardSizeXXL:             "Max",
+	CardSizeTitle:           "Card zoom (+ / - / 0)",
+	CardSizeDecTitle:        "Zoom out cards (-)",
+	CardSizeIncTitle:        "Zoom in cards (+)",
+	CardSizeResetTitle:      "Reset default card size (0)",
 	SoundMutedTitle:         "Sound alert (Muted)",
 	SoundActiveTitle:        "Sound alert (Active)",
 	TestAlertTitle:          "Send test alert",
@@ -404,7 +395,7 @@ var enUS = Messages{
 	ToastMaintDisabled:      "Maintenance mode disabled",
 	ToastCheckDone:          "Check completed",
 	ToastRateLimit:          "Please wait a few seconds before retrying",
-	ToastCardSizeFmt:        "Card size: %s",
+	ToastCardSizeFmt:        "Card zoom: %s",
 	ShortcutsModalTitle:     "Keyboard Shortcuts",
 	ShortcutSearch:          "Focus search / clear filter",
 	ShortcutFilter:          "Filter by status (All, Down, Degraded, Operational)",

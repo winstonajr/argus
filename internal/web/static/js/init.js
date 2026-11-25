@@ -66,22 +66,32 @@
   }
   document.documentElement.setAttribute('data-theme', resolveTheme(savedTheme));
   var params = new URLSearchParams(window.location.search);
-  var validSizes = { md: 1, lg: 1, xl: 1, xxl: 1 };
-  var urlSize = (params.get('size') || '').toLowerCase();
-  var cardSize = validSizes[urlSize] ? urlSize : '';
-  if (!cardSize) {
+  function normalizeZoom(raw) {
+    if (!raw) return 0;
+    var s = String(raw).trim().toLowerCase().replace('%', '');
+    var aliases = { xs: 50, sm: 70, md: 100, lg: 130, xl: 170, xxl: 220 };
+    if (aliases[s]) return aliases[s];
+    var n = parseInt(s, 10);
+    if (isNaN(n)) return 0;
+    n = Math.round(n / 10) * 10;
+    return Math.max(50, Math.min(300, n));
+  }
+  var urlZoom = normalizeZoom(params.get('zoom') || params.get('size'));
+  var cardZoom = urlZoom;
+  if (!cardZoom) {
     try {
-      var savedSize = (localStorage.getItem('argus-card-size') || '').toLowerCase();
-      if (validSizes[savedSize]) cardSize = savedSize;
+      cardZoom = normalizeZoom(localStorage.getItem('argus-card-zoom') || localStorage.getItem('argus-card-size'));
+      localStorage.removeItem('argus-card-size');
     } catch (_) {}
   } else {
     try {
-      if (cardSize === 'md') localStorage.removeItem('argus-card-size');
-      else localStorage.setItem('argus-card-size', cardSize);
+      localStorage.removeItem('argus-card-size');
+      if (cardZoom === 100) localStorage.removeItem('argus-card-zoom');
+      else localStorage.setItem('argus-card-zoom', String(cardZoom));
     } catch (_) {}
   }
-  if (cardSize && cardSize !== 'md') {
-    document.documentElement.setAttribute('data-card-size', cardSize);
+  if (cardZoom && cardZoom !== 100) {
+    document.documentElement.setAttribute('data-card-zoom', String(cardZoom));
   }
   if (window.location.pathname === '/' && params.get('view') === 'tv') {
     document.documentElement.classList.add('tv-mode');

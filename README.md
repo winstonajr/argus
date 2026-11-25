@@ -16,7 +16,7 @@ Lightweight availability and health-check monitor for internal systems, servers,
 - **Real-time updates via SSE**: instant per-language card updates (`/events`), priority sorting or manual drag-and-drop ordering, on-demand check triggers, 30-slot heartbeat bar, and latency sparkline.
 - **Rich multi-channel notifications**: formatted outage, degraded, and recovery alerts (with root-cause diagnosis, layer/target metadata, MTTR downtime duration, and optional dashboard link) via Telegram (HTML), Email (multipart HTML/text over SMTP STARTTLS `587` or implicit TLS `465`), Slack attachments, Discord embeds, and generic JSON Webhook (with custom headers), plus one-click test alerts, cooldown control, and maintenance suppression.
 - **History & SLA**: embedded SQLite (WAL mode) with startup state hydration, persisted timed maintenance windows, 1h/24h/7d/30d timelines, failed-check inspection, MTBF/MTTR/P95 metrics, and CSV/JSON export.
-- **Themes, NOC & observability**: custom color themes (`auto`, `dark`, `light`, `midnight`, `nord`, `warm`, `emerald`, `latte`), automatic seasonal themes on commemorative dates (`ARGUS_SEASONAL_THEMES`), bilingual UI (`pt-BR` / `en`), configurable IANA timezone (`ARGUS_TIMEZONE`), adjustable card sizes (`+` / `-` / `0` or `?size=lg|xl|xxl`) to fill widescreen and NOC monitors, system groups, compact table view, sound alerts, TV heatmap mode (`?view=tv`), read-only public status page (`/status`), Prometheus metrics (`/metrics`), `SIGHUP` hot config reload, and optional Santa sleigh easter egg (`ARGUS_SANTA_EASTER_EGG`).
+- **Themes, NOC & observability**: custom color themes (`auto`, `dark`, `light`, `midnight`, `nord`, `warm`, `emerald`, `latte`), automatic seasonal themes on commemorative dates (`ARGUS_SEASONAL_THEMES`), bilingual UI (`pt-BR` / `en`), configurable IANA timezone (`ARGUS_TIMEZONE`), gradual card zoom from `50%` to `300%` (`+` / `-` / `0` or `?zoom=80`–`300`) for both dense matrices and large NOC screens, system groups, compact table view, sound alerts, TV heatmap mode (`?view=tv`), read-only public status page (`/status`), Prometheus metrics (`/metrics`), `SIGHUP` hot config reload, and optional Santa sleigh easter egg (`ARGUS_SANTA_EASTER_EGG`).
 
 ## Quick Start
 
@@ -160,7 +160,7 @@ kill -HUP $(pidof argus)
 - `2` : filter `DOWN` systems.
 - `3` : filter `DEGRADED` systems.
 - `4` : filter `UP` systems.
-- `+` / `-` / `0` : increase, decrease, or reset card size (both Home and TV mode; also via `?size=lg|xl|xxl`).
+- `+` / `-` / `0` : zoom cards in/out in `10%` steps (`50%`–`300%`) or reset to `100%` (both Home and TV mode; also via `?zoom=80`–`300`).
 - `t` : cycle/toggle color theme.
 - `v` : toggle TV mode.
 - `?` : open keyboard shortcuts modal.

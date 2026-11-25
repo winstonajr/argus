@@ -19,13 +19,52 @@ on:
         required: true
         default: true
         type: boolean
+      prune_tags:
+        description: 'Remover todas as tags antigas do Docker Hub exceto latest?'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
 
 jobs:
+  prune:
+    name: Prune Docker Hub Tags
+    if: github.event_name == 'workflow_dispatch' && inputs.prune_tags == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete non-latest tags from Docker Hub
+        shell: bash
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          DOCKERHUB_USER="${DOCKERHUB_USERNAME:-winajr}"
+          LOGIN_PAYLOAD=$(jq -n --arg u "$DOCKERHUB_USER" --arg p "$DOCKERHUB_TOKEN" '{username: $u, password: $p}')
+          JWT_TOKEN=$(curl -fsSL -X POST "https://hub.docker.com/v2/users/login/" \
+            -H "Content-Type: application/json" \
+            -d "$LOGIN_PAYLOAD" 2>/dev/null | jq -r '.token // empty' || true)
+          if [ -z "$JWT_TOKEN" ]; then
+            echo "::error::Failed to obtain Docker Hub JWT token."
+            exit 1
+          fi
+          TAGS=$(curl -fsSL "https://hub.docker.com/v2/repositories/${DOCKERHUB_USER}/argus/tags?page_size=100" \
+            -H "Authorization: JWT $JWT_TOKEN" | jq -r '.results[].name')
+          for TAG_NAME in $TAGS; do
+            if [ "$TAG_NAME" = "latest" ]; then
+              continue
+            fi
+            CODE=$(curl -sS -o /dev/null -w "%{http_code}" -X DELETE \
+              "https://hub.docker.com/v2/repositories/${DOCKERHUB_USER}/argus/tags/${TAG_NAME}/" \
+              -H "Authorization: JWT $JWT_TOKEN")
+            echo "Deleted Docker Hub tag ${TAG_NAME} (HTTP ${CODE})"
+          done
+
   test:
     name: Verify & Test
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.prune_tags == true && inputs.latest == false && inputs.tag == '') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -79,7 +118,12 @@ jobs:
           LATEST_TAG=$(git describe --tags --abbrev=0 --match "v[0-9]*.[0-9]*.[0-9]*" 2>/dev/null || echo "")
           if [ -z "$LATEST_TAG" ]; then
             VERSION="0.0.0"
-            RANGE="HEAD"
+            BEFORE_SHA="${{ github.event.before }}"
+            if [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] && git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+              RANGE="${BEFORE_SHA}..HEAD"
+            else
+              RANGE="HEAD~1..HEAD"
+            fi
           else
             VERSION="${LATEST_TAG#v}"
             RANGE="${LATEST_TAG}..HEAD"

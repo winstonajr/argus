@@ -34,10 +34,6 @@
       data-toast-check-done="{{.T.ToastCheckDone}}"
       data-toast-rate-limit="{{.T.ToastRateLimit}}"
       data-toast-card-size="{{.T.ToastCardSizeFmt}}"
-      data-size-md="{{.T.CardSizeMD}}"
-      data-size-lg="{{.T.CardSizeLG}}"
-      data-size-xl="{{.T.CardSizeXL}}"
-      data-size-xxl="{{.T.CardSizeXXL}}"
       data-santa-easter-egg="{{if .SantaEasterEgg}}true{{else}}false{{end}}">
   <div class="sr-sprite">
     {{.IconsSVG}}
@@ -105,9 +101,11 @@
         <svg class="icon" aria-hidden="true"><use href="#icon-list"></use></svg>
       </button>
 
-      <button type="button" class="btn-icon" id="card-size-btn" title="{{.T.CardSizeTitle}}" aria-label="{{.T.CardSizeTitle}}" aria-pressed="false">
-        <svg class="icon" aria-hidden="true"><use href="#icon-expand"></use></svg>
-      </button>
+      <div class="zoom-control" role="group" aria-label="{{.T.CardSizeTitle}}">
+        <button type="button" class="zoom-control__btn mono" id="card-zoom-dec-btn" title="{{.T.CardSizeDecTitle}}" aria-label="{{.T.CardSizeDecTitle}}">−</button>
+        <button type="button" class="zoom-control__val mono" id="card-zoom-reset-btn" title="{{.T.CardSizeResetTitle}}" aria-label="{{.T.CardSizeResetTitle}}">100%</button>
+        <button type="button" class="zoom-control__btn mono" id="card-zoom-inc-btn" title="{{.T.CardSizeIncTitle}}" aria-label="{{.T.CardSizeIncTitle}}">+</button>
+      </div>
       {{end}}
 
       {{if not .HideNOCControls}}
@@ -187,6 +185,7 @@
   {{if not .HideNOCControls}}
   <div class="tv-floating-bar">
     <button type="button" id="tv-size-dec-btn" class="tv-ctrl-btn mono" title="{{.T.CardSizeDecTitle}}" aria-label="{{.T.CardSizeDecTitle}}">−</button>
+    <button type="button" id="tv-size-reset-btn" class="tv-ctrl-val mono" title="{{.T.CardSizeResetTitle}}" aria-label="{{.T.CardSizeResetTitle}}">100%</button>
     <button type="button" id="tv-size-inc-btn" class="tv-ctrl-btn mono" title="{{.T.CardSizeIncTitle}}" aria-label="{{.T.CardSizeIncTitle}}">+</button>
     <button type="button" id="tv-exit-btn" class="tv-exit-btn" title="{{.T.TVModeTitle}}" aria-label="{{.T.TVModeTitle}}">
       <svg class="icon" aria-hidden="true"><use href="#icon-tv"></use></svg>

@@ -491,8 +491,8 @@ func TestServer_TriggerCheckAndUIControls(t *testing.T) {
 	if !strings.Contains(rrIndex.Body.String(), `id="sort-toggle-btn"`) {
 		t.Errorf("expected index page to include sort-toggle-btn")
 	}
-	if !strings.Contains(rrIndex.Body.String(), `id="card-size-btn"`) {
-		t.Errorf("expected index page to include card-size-btn")
+	if !strings.Contains(rrIndex.Body.String(), `id="card-zoom-inc-btn"`) {
+		t.Errorf("expected index page to include card-zoom-inc-btn")
 	}
 	if !strings.Contains(rrIndex.Body.String(), `id="tv-size-inc-btn"`) {
 		t.Errorf("expected index page to include tv-size-inc-btn")

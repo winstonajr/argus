@@ -239,51 +239,88 @@
     } catch (_) {}
   }
 
-  const CARD_SIZES = ['md', 'lg', 'xl', 'xxl'];
-  const CARD_SIZE_KEY = 'argus-card-size';
+  const ZOOM_MIN = 50;
+  const ZOOM_MAX = 300;
+  const ZOOM_STEP = 10;
+  const CARD_ZOOM_KEY = 'argus-card-zoom';
+  let zoomToastEl = null;
+  let zoomToastTimer = null;
 
-  function getCardSize() {
-    const attr = (document.documentElement.getAttribute('data-card-size') || '').toLowerCase();
-    if (CARD_SIZES.indexOf(attr) !== -1) return attr;
+  function clampZoom(val) {
+    const n = parseInt(String(val || ''), 10);
+    if (isNaN(n)) return 100;
+    const snapped = Math.round(n / ZOOM_STEP) * ZOOM_STEP;
+    return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, snapped));
+  }
+
+  function getCardZoom() {
+    const attr = document.documentElement.getAttribute('data-card-zoom');
+    if (attr) return clampZoom(attr);
     try {
-      const saved = (localStorage.getItem(CARD_SIZE_KEY) || '').toLowerCase();
-      if (CARD_SIZES.indexOf(saved) !== -1) return saved;
+      const saved = localStorage.getItem(CARD_ZOOM_KEY);
+      if (saved) return clampZoom(saved);
     } catch (_) {}
-    return 'md';
+    return 100;
   }
 
-  function cardSizeLabel(size) {
-    if (size === 'lg') return dataset('sizeLg', 'Médio');
-    if (size === 'xl') return dataset('sizeXl', 'Grande');
-    if (size === 'xxl') return dataset('sizeXxl', 'Máximo');
-    return dataset('sizeMd', 'Padrão');
-  }
-
-  function syncCardSizeUI(size) {
-    const btn = document.getElementById('card-size-btn');
-    const isScaled = size !== 'md';
-    if (btn) {
-      btn.classList.toggle('active', isScaled);
-      btn.setAttribute('aria-pressed', isScaled ? 'true' : 'false');
+  function showZoomToast(zoom) {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    const tpl = dataset('toastCardSize', 'Zoom dos cards: %s');
+    const text = tpl.replace('%s', zoom + '%');
+    if (!zoomToastEl || !container.contains(zoomToastEl)) {
+      zoomToastEl = document.createElement('div');
+      zoomToastEl.className = 'toast';
+      container.appendChild(zoomToastEl);
     }
-    const decBtn = document.getElementById('tv-size-dec-btn');
-    const incBtn = document.getElementById('tv-size-inc-btn');
-    if (decBtn) decBtn.disabled = size === 'md';
-    if (incBtn) incBtn.disabled = size === 'xxl';
+    zoomToastEl.textContent = text;
+    if (zoomToastTimer) clearTimeout(zoomToastTimer);
+    zoomToastTimer = setTimeout(function() {
+      if (zoomToastEl) {
+        zoomToastEl.remove();
+        zoomToastEl = null;
+      }
+      zoomToastTimer = null;
+    }, 1800);
   }
 
-  function applyCardSize(nextSize, showFeedback) {
-    const size = CARD_SIZES.indexOf(nextSize) !== -1 ? nextSize : 'md';
-    if (size === 'md') {
-      document.documentElement.removeAttribute('data-card-size');
+  function syncCardZoomUI(zoom) {
+    const label = zoom + '%';
+    const isCustom = zoom !== 100;
+
+    const resetBtn = document.getElementById('card-zoom-reset-btn');
+    const decBtn = document.getElementById('card-zoom-dec-btn');
+    const incBtn = document.getElementById('card-zoom-inc-btn');
+    if (resetBtn) {
+      resetBtn.textContent = label;
+      resetBtn.classList.toggle('active', isCustom);
+    }
+    if (decBtn) decBtn.disabled = zoom <= ZOOM_MIN;
+    if (incBtn) incBtn.disabled = zoom >= ZOOM_MAX;
+
+    const tvResetBtn = document.getElementById('tv-size-reset-btn');
+    const tvDecBtn = document.getElementById('tv-size-dec-btn');
+    const tvIncBtn = document.getElementById('tv-size-inc-btn');
+    if (tvResetBtn) {
+      tvResetBtn.textContent = label;
+      tvResetBtn.classList.toggle('active', isCustom);
+    }
+    if (tvDecBtn) tvDecBtn.disabled = zoom <= ZOOM_MIN;
+    if (tvIncBtn) tvIncBtn.disabled = zoom >= ZOOM_MAX;
+  }
+
+  function applyCardZoom(nextZoom, showFeedback) {
+    const zoom = clampZoom(nextZoom);
+    if (zoom === 100) {
+      document.documentElement.removeAttribute('data-card-zoom');
     } else {
-      document.documentElement.setAttribute('data-card-size', size);
+      document.documentElement.setAttribute('data-card-zoom', String(zoom));
     }
     try {
-      if (size === 'md') {
-        localStorage.removeItem(CARD_SIZE_KEY);
+      if (zoom === 100) {
+        localStorage.removeItem(CARD_ZOOM_KEY);
       } else {
-        localStorage.setItem(CARD_SIZE_KEY, size);
+        localStorage.setItem(CARD_ZOOM_KEY, String(zoom));
       }
     } catch (_) {}
 
@@ -301,40 +338,30 @@
 
     try {
       const url = new URL(window.location.href);
-      if (url.searchParams.has('size') || document.documentElement.classList.contains('tv-mode')) {
-        if (size === 'md') {
-          url.searchParams.delete('size');
+      url.searchParams.delete('size');
+      if (url.searchParams.has('zoom') || document.documentElement.classList.contains('tv-mode')) {
+        if (zoom === 100) {
+          url.searchParams.delete('zoom');
         } else {
-          url.searchParams.set('size', size);
+          url.searchParams.set('zoom', String(zoom));
         }
         window.history.replaceState(null, '', url.toString());
       }
     } catch (_) {}
 
-    syncCardSizeUI(size);
+    syncCardZoomUI(zoom);
     if (showFeedback) {
-      const tpl = dataset('toastCardSize', 'Tamanho dos cards: %s');
-      showToast(tpl.replace('%s', cardSizeLabel(size)));
+      showZoomToast(zoom);
     }
   }
 
-  function stepCardSize(delta) {
+  function stepCardZoom(delta) {
     if (!document.getElementById('cards-grid')) return;
-    const cur = getCardSize();
-    const idx = CARD_SIZES.indexOf(cur);
-    const nextIdx = Math.max(0, Math.min(CARD_SIZES.length - 1, (idx === -1 ? 0 : idx) + delta));
-    const next = CARD_SIZES[nextIdx];
+    const cur = getCardZoom();
+    const next = clampZoom(cur + delta);
     if (next !== cur) {
-      applyCardSize(next, true);
+      applyCardZoom(next, true);
     }
-  }
-
-  function cycleCardSize() {
-    if (!document.getElementById('cards-grid')) return;
-    const cur = getCardSize();
-    const idx = CARD_SIZES.indexOf(cur);
-    const next = CARD_SIZES[((idx === -1 ? 0 : idx) + 1) % CARD_SIZES.length];
-    applyCardSize(next, true);
   }
 
   function toggleLanguage() {
@@ -1062,14 +1089,14 @@
       }
     } else if ((e.key === '+' || e.key === '=') && document.getElementById('cards-grid')) {
       e.preventDefault();
-      stepCardSize(1);
+      stepCardZoom(ZOOM_STEP);
     } else if ((e.key === '-' || e.key === '_') && document.getElementById('cards-grid')) {
       e.preventDefault();
-      stepCardSize(-1);
+      stepCardZoom(-ZOOM_STEP);
     } else if (e.key === '0' && document.getElementById('cards-grid')) {
-      if (getCardSize() !== 'md') {
+      if (getCardZoom() !== 100) {
         e.preventDefault();
-        applyCardSize('md', true);
+        applyCardZoom(100, true);
       }
     } else if (e.key === '1') {
       setFilter('all');
@@ -1524,7 +1551,7 @@
     initAutoHideScrollbar();
     initTVMode();
     initViewMode();
-    syncCardSizeUI(getCardSize());
+    syncCardZoomUI(getCardZoom());
     initSound();
     seedInitialStatuses();
     initSortMode();
@@ -1546,14 +1573,23 @@
     const viewBtn = document.getElementById('view-toggle-btn');
     if (viewBtn) viewBtn.addEventListener('click', toggleViewMode);
 
-    const cardSizeBtn = document.getElementById('card-size-btn');
-    if (cardSizeBtn) cardSizeBtn.addEventListener('click', cycleCardSize);
+    const cardZoomDecBtn = document.getElementById('card-zoom-dec-btn');
+    if (cardZoomDecBtn) cardZoomDecBtn.addEventListener('click', function() { stepCardZoom(-ZOOM_STEP); });
+
+    const cardZoomResetBtn = document.getElementById('card-zoom-reset-btn');
+    if (cardZoomResetBtn) cardZoomResetBtn.addEventListener('click', function() { if (getCardZoom() !== 100) applyCardZoom(100, true); });
+
+    const cardZoomIncBtn = document.getElementById('card-zoom-inc-btn');
+    if (cardZoomIncBtn) cardZoomIncBtn.addEventListener('click', function() { stepCardZoom(ZOOM_STEP); });
 
     const tvSizeDecBtn = document.getElementById('tv-size-dec-btn');
-    if (tvSizeDecBtn) tvSizeDecBtn.addEventListener('click', function() { stepCardSize(-1); });
+    if (tvSizeDecBtn) tvSizeDecBtn.addEventListener('click', function() { stepCardZoom(-ZOOM_STEP); });
+
+    const tvSizeResetBtn = document.getElementById('tv-size-reset-btn');
+    if (tvSizeResetBtn) tvSizeResetBtn.addEventListener('click', function() { if (getCardZoom() !== 100) applyCardZoom(100, true); });
 
     const tvSizeIncBtn = document.getElementById('tv-size-inc-btn');
-    if (tvSizeIncBtn) tvSizeIncBtn.addEventListener('click', function() { stepCardSize(1); });
+    if (tvSizeIncBtn) tvSizeIncBtn.addEventListener('click', function() { stepCardZoom(ZOOM_STEP); });
 
     const soundBtn = document.getElementById('sound-toggle-btn');
     if (soundBtn) soundBtn.addEventListener('click', toggleSound);
