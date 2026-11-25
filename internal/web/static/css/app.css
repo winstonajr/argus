@@ -456,33 +456,35 @@ html:not(.tv-mode)[data-card-zoom="300"], html.tv-mode[data-tv-zoom="300"] { --c
 :root {
   --cz-ui: calc(0.4 + 0.6 * var(--cz));
   --card-min-w: calc(320px * var(--cz));
-  --card-grid-gap: clamp(8px, calc(20px * var(--cz-ui)), 32px);
-  --card-pad-y: clamp(8px, calc(16px * var(--cz-ui)), 30px);
-  --card-pad-x: clamp(10px, calc(20px * var(--cz-ui)), 36px);
-  --card-gap: clamp(6px, calc(12px * var(--cz-ui)), 20px);
-  --card-banner-fs: clamp(10px, calc(13px * var(--cz-ui)), 16px);
-  --card-uptime-fs: clamp(10px, calc(12px * var(--cz-ui)), 15px);
-  --card-title-fs: clamp(14px, calc(22px * var(--cz-ui)), 36px);
-  --card-subtitle-fs: clamp(10.5px, calc(13px * var(--cz-ui)), 16px);
-  --card-target-pad-y: clamp(5px, calc(8px * var(--cz-ui)), 15px);
-  --card-target-pad-x: clamp(7px, calc(12px * var(--cz-ui)), 20px);
-  --card-target-label-fs: clamp(9px, calc(11px * var(--cz-ui)), 13.5px);
-  --card-target-val-fs: clamp(12px, calc(16px * var(--cz-ui)), 26px);
-  --card-hb-h: clamp(4px, calc(6px * var(--cz-ui)), 13px);
-  --card-spark-w: clamp(42px, calc(60px * var(--cz-ui)), 120px);
-  --card-spark-h: clamp(12px, calc(16px * var(--cz-ui)), 30px);
-  --card-footer-fs: clamp(10px, calc(12px * var(--cz-ui)), 15px);
+  --card-max-w: calc(400px * var(--cz));
+  --card-grid-gap: clamp(8px, calc(20px * var(--cz-ui)), 44px);
+  --card-pad-y: clamp(8px, calc(16px * var(--cz-ui)), 36px);
+  --card-pad-x: clamp(10px, calc(20px * var(--cz-ui)), 44px);
+  --card-gap: clamp(6px, calc(12px * var(--cz-ui)), 26px);
+  --card-banner-fs: clamp(10px, calc(13px * var(--cz-ui)), 26px);
+  --card-uptime-fs: clamp(10px, calc(12px * var(--cz-ui)), 24px);
+  --card-title-fs: clamp(14px, calc(22px * var(--cz-ui)), 48px);
+  --card-subtitle-fs: clamp(10.5px, calc(13px * var(--cz-ui)), 26px);
+  --card-target-pad-y: clamp(5px, calc(8px * var(--cz-ui)), 18px);
+  --card-target-pad-x: clamp(7px, calc(12px * var(--cz-ui)), 26px);
+  --card-target-label-fs: clamp(9px, calc(11px * var(--cz-ui)), 22px);
+  --card-target-val-fs: clamp(12px, calc(16px * var(--cz-ui)), 34px);
+  --card-hb-h: clamp(4px, calc(6px * var(--cz-ui)), 14px);
+  --card-spark-w: clamp(42px, calc(60px * var(--cz-ui)), 130px);
+  --card-spark-h: clamp(12px, calc(16px * var(--cz-ui)), 34px);
+  --card-footer-fs: clamp(10px, calc(12px * var(--cz-ui)), 24px);
 
   --tv-card-min-w: calc(150px * var(--cz));
-  --tv-grid-gap: clamp(6px, calc(10px * var(--cz-ui)), 18px);
-  --tv-card-pad: clamp(6px, calc(12px * var(--cz-ui)), 24px);
-  --tv-card-gap: clamp(4px, calc(8px * var(--cz-ui)), 16px);
-  --tv-title-fs: clamp(11px, calc(16px * var(--cz-ui)), 30px);
-  --tv-pill-pad-y: clamp(3px, calc(5px * var(--cz-ui)), 11px);
-  --tv-pill-pad-x: clamp(4px, calc(7px * var(--cz-ui)), 14px);
-  --tv-pill-label-fs: clamp(7.5px, calc(9.5px * var(--cz-ui)), 13px);
-  --tv-pill-val-fs: clamp(9.5px, calc(12px * var(--cz-ui)), 22px);
-  --tv-pill-dot: clamp(4px, calc(5px * var(--cz-ui)), 9px);
+  --tv-card-max-w: calc(210px * var(--cz));
+  --tv-grid-gap: clamp(6px, calc(10px * var(--cz-ui)), 22px);
+  --tv-card-pad: clamp(6px, calc(12px * var(--cz-ui)), 26px);
+  --tv-card-gap: clamp(4px, calc(8px * var(--cz-ui)), 18px);
+  --tv-title-fs: clamp(11px, calc(16px * var(--cz-ui)), 34px);
+  --tv-pill-pad-y: clamp(3px, calc(5px * var(--cz-ui)), 12px);
+  --tv-pill-pad-x: clamp(4px, calc(7px * var(--cz-ui)), 16px);
+  --tv-pill-label-fs: clamp(7.5px, calc(9.5px * var(--cz-ui)), 20px);
+  --tv-pill-val-fs: clamp(9.5px, calc(12px * var(--cz-ui)), 26px);
+  --tv-pill-dot: clamp(4px, calc(5px * var(--cz-ui)), 11px);
 }
 
 .main-container {
@@ -492,7 +494,7 @@ html:not(.tv-mode)[data-card-zoom="300"], html.tv-mode[data-tv-zoom="300"] { --c
 
 .cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--card-min-w)), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--card-min-w)), min(100%, var(--card-max-w))));
   gap: var(--card-grid-gap);
 }
 
@@ -1266,7 +1268,7 @@ html:not(.tv-mode)[data-card-zoom="300"], html.tv-mode[data-tv-zoom="300"] { --c
 }
 
 .tv-mode .cards-grid {
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--tv-card-min-w)), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--tv-card-min-w)), min(100%, var(--tv-card-max-w))));
   gap: var(--tv-grid-gap);
 }
 
