@@ -76,25 +76,34 @@
     n = Math.round(n / 10) * 10;
     return Math.max(50, Math.min(300, n));
   }
-  var urlZoom = normalizeZoom(params.get('zoom') || params.get('size'));
-  var cardZoom = urlZoom;
-  if (!cardZoom) {
-    try {
-      cardZoom = normalizeZoom(localStorage.getItem('argus-card-zoom') || localStorage.getItem('argus-card-size'));
-      localStorage.removeItem('argus-card-size');
-    } catch (_) {}
-  } else {
-    try {
-      localStorage.removeItem('argus-card-size');
-      if (cardZoom === 100) localStorage.removeItem('argus-card-zoom');
-      else localStorage.setItem('argus-card-zoom', String(cardZoom));
-    } catch (_) {}
+  var isTVInit = window.location.pathname === '/' && params.get('view') === 'tv';
+  if (isTVInit) {
+    document.documentElement.classList.add('tv-mode');
   }
+  var urlZoom = normalizeZoom(params.get('zoom') || params.get('size'));
+  var cardZoom = 0;
+  var tvZoom = 0;
+  try {
+    cardZoom = normalizeZoom(localStorage.getItem('argus-card-zoom') || localStorage.getItem('argus-card-size'));
+    tvZoom = normalizeZoom(localStorage.getItem('argus-tv-zoom'));
+    localStorage.removeItem('argus-card-size');
+    if (urlZoom) {
+      if (isTVInit) {
+        tvZoom = urlZoom;
+        if (tvZoom === 100) localStorage.removeItem('argus-tv-zoom');
+        else localStorage.setItem('argus-tv-zoom', String(tvZoom));
+      } else {
+        cardZoom = urlZoom;
+        if (cardZoom === 100) localStorage.removeItem('argus-card-zoom');
+        else localStorage.setItem('argus-card-zoom', String(cardZoom));
+      }
+    }
+  } catch (_) {}
   if (cardZoom && cardZoom !== 100) {
     document.documentElement.setAttribute('data-card-zoom', String(cardZoom));
   }
-  if (window.location.pathname === '/' && params.get('view') === 'tv') {
-    document.documentElement.classList.add('tv-mode');
+  if (tvZoom && tvZoom !== 100) {
+    document.documentElement.setAttribute('data-tv-zoom', String(tvZoom));
   }
   if (localStorage.getItem('argus-view') === 'compact') {
     document.documentElement.classList.add('view-compact');

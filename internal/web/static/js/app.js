@@ -206,12 +206,17 @@
       btn.classList.toggle('active', isTV);
       btn.setAttribute('aria-pressed', isTV ? 'true' : 'false');
     }
+    const modeZoom = getCardZoom();
+    syncCardZoomUI(modeZoom);
     try {
       const url = new URL(window.location.href);
       if (isTV) {
         url.searchParams.set('view', 'tv');
+        if (modeZoom !== 100) url.searchParams.set('zoom', String(modeZoom));
+        else url.searchParams.delete('zoom');
       } else {
         url.searchParams.delete('view');
+        url.searchParams.delete('zoom');
       }
       window.history.replaceState(null, '', url.toString());
     } catch (_) {}
@@ -243,8 +248,21 @@
   const ZOOM_MAX = 300;
   const ZOOM_STEP = 10;
   const CARD_ZOOM_KEY = 'argus-card-zoom';
+  const TV_ZOOM_KEY = 'argus-tv-zoom';
   let zoomToastEl = null;
   let zoomToastTimer = null;
+
+  function isTVMode() {
+    return document.documentElement.classList.contains('tv-mode');
+  }
+
+  function zoomAttr() {
+    return isTVMode() ? 'data-tv-zoom' : 'data-card-zoom';
+  }
+
+  function zoomStorageKey() {
+    return isTVMode() ? TV_ZOOM_KEY : CARD_ZOOM_KEY;
+  }
 
   function clampZoom(val) {
     const n = parseInt(String(val || ''), 10);
@@ -254,10 +272,10 @@
   }
 
   function getCardZoom() {
-    const attr = document.documentElement.getAttribute('data-card-zoom');
+    const attr = document.documentElement.getAttribute(zoomAttr());
     if (attr) return clampZoom(attr);
     try {
-      const saved = localStorage.getItem(CARD_ZOOM_KEY);
+      const saved = localStorage.getItem(zoomStorageKey());
       if (saved) return clampZoom(saved);
     } catch (_) {}
     return 100;
@@ -311,16 +329,18 @@
 
   function applyCardZoom(nextZoom, showFeedback) {
     const zoom = clampZoom(nextZoom);
+    const attr = zoomAttr();
+    const key = zoomStorageKey();
     if (zoom === 100) {
-      document.documentElement.removeAttribute('data-card-zoom');
+      document.documentElement.removeAttribute(attr);
     } else {
-      document.documentElement.setAttribute('data-card-zoom', String(zoom));
+      document.documentElement.setAttribute(attr, String(zoom));
     }
     try {
       if (zoom === 100) {
-        localStorage.removeItem(CARD_ZOOM_KEY);
+        localStorage.removeItem(key);
       } else {
-        localStorage.setItem(CARD_ZOOM_KEY, String(zoom));
+        localStorage.setItem(key, String(zoom));
       }
     } catch (_) {}
 
