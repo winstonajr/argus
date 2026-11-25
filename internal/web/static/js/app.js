@@ -1642,5 +1642,34 @@
         setFilter(this.getAttribute('data-filter') || 'all');
       });
     });
+
+    document.querySelectorAll('.event-note-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        const eventId = this.getAttribute('data-event-id');
+        if (!eventId) return;
+        const currentNote = this.getAttribute('data-note') || '';
+        const currentPublic = this.getAttribute('data-public') === 'true';
+        const nextNote = window.prompt('Anotação do incidente:', currentNote);
+        if (nextNote === null) return;
+        const isPublic = nextNote.trim() !== ''
+          ? window.confirm('Exibir esta nota publicamente na página /status?')
+          : false;
+        fetch('/api/events/' + encodeURIComponent(eventId) + '/note', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ note: nextNote, public_note: isPublic })
+        })
+          .then(function(res) {
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            return res.json();
+          })
+          .then(function() {
+            window.location.reload();
+          })
+          .catch(function(err) {
+            window.alert('Erro ao salvar anotação: ' + err.message);
+          });
+      });
+    });
   });
 })();

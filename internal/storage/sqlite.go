@@ -104,6 +104,10 @@ CREATE TABLE IF NOT EXISTS checks (
   ok            INTEGER NOT NULL,
   status_code   INTEGER,
   latency_ms    INTEGER,
+  dns_ms        INTEGER NOT NULL DEFAULT 0,
+  connect_ms    INTEGER NOT NULL DEFAULT 0,
+  tls_ms        INTEGER NOT NULL DEFAULT 0,
+  ttfb_ms       INTEGER NOT NULL DEFAULT 0,
   loss_pct      REAL,
   error_cat     TEXT,
   error_msg     TEXT,
@@ -119,6 +123,8 @@ CREATE TABLE IF NOT EXISTS events (
   to_status      TEXT    NOT NULL,
   diagnosis      TEXT,
   detail         TEXT,
+  note           TEXT    NOT NULL DEFAULT '',
+  public_note    INTEGER NOT NULL DEFAULT 0,
   occurred_at    DATETIME NOT NULL,
   occurred_at_ms INTEGER NOT NULL DEFAULT 0
 );
@@ -155,6 +161,11 @@ CREATE TABLE IF NOT EXISTS checks_hourly (
 	if userVersion < 2 {
 		if err := migrateToV2(db, dbPath); err != nil {
 			return fmt.Errorf("migrate to v2: %w", err)
+		}
+	}
+	if userVersion < 3 {
+		if err := migrateToV3(db, dbPath); err != nil {
+			return fmt.Errorf("migrate to v3: %w", err)
 		}
 	}
 
@@ -257,6 +268,50 @@ ON CONFLICT(system_id, kind, hour_ms) DO UPDATE SET
 	}
 
 	_, err = db.Exec("PRAGMA user_version = 2")
+	return err
+}
+
+func migrateToV3(db *sql.DB, dbPath string) error {
+	var existingRows int
+	_ = db.QueryRow("SELECT (SELECT COUNT(*) FROM checks) + (SELECT COUNT(*) FROM events)").Scan(&existingRows)
+	if existingRows > 0 && dbPath != "" && dbPath != ":memory:" {
+		_, _ = db.Exec("PRAGMA wal_checkpoint(PASSIVE)")
+		backupPath := dbPath + ".v3.bak"
+		if _, statErr := os.Stat(backupPath); os.IsNotExist(statErr) {
+			if bErr := copyFile(dbPath, backupPath); bErr != nil {
+				log.Printf("[WARN] failed to create database backup %s: %v", backupPath, bErr)
+			} else {
+				log.Printf("[INFO] Backup do banco SQLite criado em %s antes da migração v3", backupPath)
+			}
+		}
+	}
+
+	cols := []struct {
+		table string
+		col   string
+		def   string
+	}{
+		{"checks", "dns_ms", "INTEGER NOT NULL DEFAULT 0"},
+		{"checks", "connect_ms", "INTEGER NOT NULL DEFAULT 0"},
+		{"checks", "tls_ms", "INTEGER NOT NULL DEFAULT 0"},
+		{"checks", "ttfb_ms", "INTEGER NOT NULL DEFAULT 0"},
+		{"events", "note", "TEXT NOT NULL DEFAULT ''"},
+		{"events", "public_note", "INTEGER NOT NULL DEFAULT 0"},
+	}
+
+	for _, c := range cols {
+		exists, err := hasColumn(db, c.table, c.col)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			if _, err := db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", c.table, c.col, c.def)); err != nil {
+				return fmt.Errorf("alter %s add %s: %w", c.table, c.col, err)
+			}
+		}
+	}
+
+	_, err := db.Exec("PRAGMA user_version = 3")
 	return err
 }
 
@@ -382,8 +437,8 @@ func (d *DB) writeBatch(batch []writeItem) error {
 	}()
 
 	stmtCheck, err := tx.Prepare(`
-INSERT INTO checks (system_id, kind, ok, status_code, latency_ms, loss_pct, error_cat, error_msg, checked_at, checked_at_ms)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO checks (system_id, kind, ok, status_code, latency_ms, dns_ms, connect_ms, tls_ms, ttfb_ms, loss_pct, error_cat, error_msg, checked_at, checked_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `)
 	if err != nil {
 		return fmt.Errorf("prepare check stmt: %w", err)
@@ -435,6 +490,10 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 				okInt,
 				item.check.StatusCode,
 				latMs,
+				item.check.DNSLatency.Milliseconds(),
+				item.check.ConnectLatency.Milliseconds(),
+				item.check.TLSLatency.Milliseconds(),
+				item.check.TTFBLatency.Milliseconds(),
 				item.check.Loss,
 				item.check.ErrorCat,
 				item.check.Error,

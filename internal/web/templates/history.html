@@ -20,6 +20,7 @@
     <div class="history-title-group">
       <h1 class="history-title">{{.System.Name}}</h1>
       <span class="mono text-muted">{{.System.ID}}</span>
+      {{if .System.BlockedByName}}<span class="dep-badge">DEPENDE: {{.System.BlockedByName}}</span>{{end}}
       <button type="button"
               id="check-now-btn"
               class="period-btn"
@@ -168,6 +169,26 @@
       </div>
     </div>
     {{end}}
+    {{if .HTTPBreakdown.HasData}}
+    <div class="http-trace-wrap">
+      <div class="timeline-label">
+        <span>Decomposição HTTP (média)</span>
+        <span class="mono">{{.HTTPBreakdown.TotalMs}}ms total</span>
+      </div>
+      <svg class="http-trace-bar" viewBox="0 0 400 12" preserveAspectRatio="none" role="img" aria-label="HTTP latency breakdown">
+        <rect class="http-trace-seg http-trace-dns" x="{{.HTTPBreakdown.DNSX}}" y="0" width="{{.HTTPBreakdown.DNSW}}" height="12" />
+        <rect class="http-trace-seg http-trace-connect" x="{{.HTTPBreakdown.ConnectX}}" y="0" width="{{.HTTPBreakdown.ConnectW}}" height="12" />
+        <rect class="http-trace-seg http-trace-tls" x="{{.HTTPBreakdown.TLSX}}" y="0" width="{{.HTTPBreakdown.TLSW}}" height="12" />
+        <rect class="http-trace-seg http-trace-ttfb" x="{{.HTTPBreakdown.TTFBX}}" y="0" width="{{.HTTPBreakdown.TTFBW}}" height="12" />
+      </svg>
+      <div class="http-trace-legend mono">
+        <span class="http-trace-item"><i class="http-trace-dot http-trace-dns"></i>DNS: {{.HTTPBreakdown.DNSMs}}ms</span>
+        <span class="http-trace-item"><i class="http-trace-dot http-trace-connect"></i>TCP: {{.HTTPBreakdown.ConnectMs}}ms</span>
+        <span class="http-trace-item"><i class="http-trace-dot http-trace-tls"></i>TLS: {{.HTTPBreakdown.TLSMs}}ms</span>
+        <span class="http-trace-item"><i class="http-trace-dot http-trace-ttfb"></i>TTFB: {{.HTTPBreakdown.TTFBMs}}ms</span>
+      </div>
+    </div>
+    {{end}}
   </section>
 
   <section class="events-section">
@@ -179,7 +200,7 @@
       {{if .DateGroup}}
         <div class="event-date-header mono">{{.DateGroup}}</div>
       {{end}}
-      <div class="event-item">
+      <div class="event-item" data-event-id="{{.ID}}">
         <div class="event-item__time">{{.OccurredAtFormatted}}</div>
         <div class="event-item__body">
           <span class="check-row__badge">{{.Kind}}</span>
@@ -189,12 +210,23 @@
           </span>
           <strong>{{.Diagnosis}}</strong>
           {{if .Detail}}<span class="text-muted">— {{.Detail}}</span>{{end}}
+          {{if .Note}}
+            <div class="event-note-display">
+              <span class="event-note-text">{{.Note}}</span>
+              {{if .PublicNote}}<span class="check-row__badge">PÚBLICA</span>{{end}}
+            </div>
+          {{end}}
         </div>
-        {{if .DurationStr}}
-          <div class="event-item__duration mono">
-            {{$.T.DurationLabel}}: {{.DurationStr}}
-          </div>
-        {{end}}
+        <div class="event-item__actions">
+          {{if .DurationStr}}
+            <div class="event-item__duration mono">
+              {{$.T.DurationLabel}}: {{.DurationStr}}
+            </div>
+          {{end}}
+          {{if gt .ID 0}}
+            <button type="button" class="period-btn event-note-btn" data-event-id="{{.ID}}" data-note="{{.Note}}" data-public="{{.PublicNote}}">Nota</button>
+          {{end}}
+        </div>
       </div>
       {{end}}
     </div>

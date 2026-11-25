@@ -31,6 +31,8 @@ type StoredEvent struct {
 	ToStatus   string        `json:"to_status"`
 	Diagnosis  string        `json:"diagnosis"`
 	Detail     string        `json:"detail"`
+	Note       string        `json:"note,omitempty"`
+	PublicNote bool          `json:"public_note,omitempty"`
 	OccurredAt time.Time     `json:"occurred_at"`
 	Duration   time.Duration `json:"duration,omitempty"` // computed if recovered
 }
@@ -64,6 +66,10 @@ type SystemHistoryStats struct {
 	MaxDownDuration time.Duration `json:"max_down_duration"`
 	AvgLatencyMs    int64         `json:"avg_latency_ms"`
 	P95LatencyMs    int64         `json:"p95_latency_ms"`
+	AvgDNSMs        int64         `json:"avg_dns_ms"`
+	AvgConnectMs    int64         `json:"avg_connect_ms"`
+	AvgTLSMs        int64         `json:"avg_tls_ms"`
+	AvgTTFBMs       int64         `json:"avg_ttfb_ms"`
 	MTTR            time.Duration `json:"mttr"`
 	MTBF            time.Duration `json:"mtbf"`
 }

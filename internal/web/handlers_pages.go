@@ -219,12 +219,15 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 			prevDate = dateStr
 		}
 		eventVMs[i] = eventViewModel{
+			ID:                  e.ID,
 			Kind:                strings.ToUpper(e.Kind),
 			FromStatus:          e.FromStatus,
 			ToStatus:            e.ToStatus,
 			ToStatusLower:       strings.ToLower(e.ToStatus),
 			Diagnosis:           e.Diagnosis,
 			Detail:              e.Detail,
+			Note:                e.Note,
+			PublicNote:          e.PublicNote,
 			OccurredAtFormatted: loc.Format("02/01 15:04:05"),
 			DateGroup:           dateGroup,
 			DurationStr:         formatDurationShort(e.Duration),
@@ -278,6 +281,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	latencyChart := buildLatencyChart(buckets, degLatMs, period)
+	httpBreakdown := buildHTTPTraceBreakdown(stats)
 
 	mttrStr := "—"
 	if stats.MTTR > 0 {
@@ -317,6 +321,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		HasMoreFailed    bool
 		Buckets          []timelineBucketViewModel
 		LatencyChart     latencyChartViewModel
+		HTTPBreakdown    httpTraceBreakdownViewModel
 	}{
 		T:                t,
 		Title:            fmt.Sprintf("%s — %s", snap.Name, t.HistorySuffix),
@@ -340,6 +345,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		HasMoreFailed:    hasMoreFailed,
 		Buckets:          bucketVMs,
 		LatencyChart:     latencyChart,
+		HTTPBreakdown:    httpBreakdown,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -495,6 +501,7 @@ func (s *Server) handlePublicStatus(w http.ResponseWriter, r *http.Request) {
 		ToStatus            string
 		ToStatusLower       string
 		Diagnosis           string
+		PublicNote          string
 		OccurredAtFormatted string
 	}
 	var recentIncidents []publicIncidentVM
@@ -505,11 +512,16 @@ func (s *Server) handlePublicStatus(w http.ResponseWriter, r *http.Request) {
 				if name == "" {
 					name = ev.SystemID
 				}
+				pubNote := ""
+				if ev.PublicNote {
+					pubNote = strings.TrimSpace(ev.Note)
+				}
 				recentIncidents = append(recentIncidents, publicIncidentVM{
 					SystemName:          name,
 					ToStatus:            translateStatus(ev.ToStatus, t),
 					ToStatusLower:       strings.ToLower(ev.ToStatus),
 					Diagnosis:           ev.Diagnosis,
+					PublicNote:          pubNote,
 					OccurredAtFormatted: ev.OccurredAt.Local().Format("02/01 15:04"),
 				})
 			}

@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -398,4 +399,47 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
+}
+
+func (s *Server) handleUpdateEventNote(w http.ResponseWriter, r *http.Request) {
+	if s.storage == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "storage unavailable")
+		return
+	}
+	idStr := r.PathValue("id")
+	eventID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || eventID <= 0 {
+		writeJSONError(w, http.StatusBadRequest, "invalid event id")
+		return
+	}
+
+	var req struct {
+		Note       string `json:"note"`
+		PublicNote bool   `json:"public_note"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid json payload")
+		return
+	}
+	note := strings.TrimSpace(req.Note)
+	if len(note) > 1000 {
+		note = note[:1000]
+	}
+
+	if err := s.storage.UpdateEventNote(r.Context(), eventID, note, req.PublicNote); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeJSONError(w, http.StatusNotFound, "event not found")
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, "failed to update event note")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":          true,
+		"id":          eventID,
+		"note":        note,
+		"public_note": req.PublicNote,
+	})
 }

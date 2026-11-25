@@ -374,3 +374,62 @@ func TestNotifier_TelegramEscapesHTMLAndEmailHTMLFormat(t *testing.T) {
 		t.Errorf("unexpected email subject: %s", ac.EmailSubject)
 	}
 }
+
+func TestNotifier_TeamsNtfyWhatsAppAndRoutes(t *testing.T) {
+	var teamsHits, ntfyHits, waHits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/teams":
+			teamsHits++
+		case "/ntfy/argus-alerts":
+			ntfyHits++
+			if r.Header.Get("Priority") != "urgent" {
+				t.Errorf("expected urgent priority for DOWN, got %q", r.Header.Get("Priority"))
+			}
+		case "/wa":
+			waHits++
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	cfg := config.AlertsConfig{
+		Routes: []config.AlertRouteConfig{
+			{
+				MatchGroups: []string{"Infra"},
+				Teams:       config.TeamsAlertConfig{WebhookURL: srv.URL + "/teams"},
+				Ntfy:        config.NtfyAlertConfig{URL: srv.URL + "/ntfy", Topic: "argus-alerts", Token: "tok"},
+				WhatsApp:    config.WhatsAppAlertConfig{URL: srv.URL + "/wa", Target: "5598999999999"},
+			},
+		},
+	}
+	n := New(cfg)
+	n.SetSystems([]config.SystemConfig{{ID: "fw", Name: "Firewall", Group: "Infra"}})
+
+	// Suppressed event should NOT send
+	n.HandleEvent(monitor.ChangeEvent{
+		SystemID:     "fw",
+		SystemName:   "Firewall",
+		Kind:         "dns",
+		ToStatus:     monitor.StatusDown,
+		SuppressedBy: "core-router",
+	})
+	// Normal DOWN event matching route should send to Teams, ntfy, WhatsApp
+	n.HandleEvent(monitor.ChangeEvent{
+		SystemID:        "fw",
+		SystemName:      "Firewall",
+		Kind:            "dns",
+		ToStatus:        monitor.StatusDown,
+		Diagnosis:       "Offline",
+		ImpactedSystems: []string{"ERP", "Portal"},
+		OccurredAt:      time.Now(),
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	n.Close(ctx)
+
+	if teamsHits != 1 || ntfyHits != 1 || waHits != 1 {
+		t.Errorf("expected 1 hit each for teams/ntfy/wa, got teams=%d ntfy=%d wa=%d", teamsHits, ntfyHits, waHits)
+	}
+}

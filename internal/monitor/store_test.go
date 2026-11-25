@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -451,5 +452,63 @@ func TestStore_TimedMaintenanceReappliedAfterReload(t *testing.T) {
 	snap, _ = store.GetSystem("sys")
 	if snap.InMaintenance {
 		t.Errorf("expected expired timed maintenance to be inactive")
+	}
+}
+
+func TestStore_DependencySuppressionAndImpacted(t *testing.T) {
+	cfg := &config.Config{
+		Defaults: config.DefaultsConfig{Interval: 10 * time.Second, FailThreshold: 1},
+		Systems: []config.SystemConfig{
+			{ID: "fw", Name: "Firewall", URL: "https://fw.local"},
+			{ID: "erp", Name: "ERP", URL: "https://erp.local", DependsOn: "fw"},
+		},
+	}
+	store := NewStore(cfg)
+
+	var events []ChangeEvent
+	store.SubscribeEvents(func(e ChangeEvent) {
+		events = append(events, e)
+	})
+
+	now := time.Now()
+	store.RecordDNSResult("fw", checker.Result{OK: false, Error: "timeout", CheckedAt: now})
+	if len(events) != 1 || len(events[0].ImpactedSystems) != 1 || events[0].ImpactedSystems[0] != "ERP" {
+		t.Fatalf("expected parent DOWN event with ImpactedSystems=[ERP], got %+v", events)
+	}
+
+	store.RecordDNSResult("erp", checker.Result{OK: false, Error: "timeout", CheckedAt: now.Add(time.Second)})
+	if len(events) != 2 || events[1].SuppressedBy != "fw" {
+		t.Fatalf("expected child DOWN event suppressed by fw, got %+v", events)
+	}
+
+	snap, ok := store.GetSystem("erp")
+	if !ok || snap.BlockedByID != "fw" || snap.BlockedByName != "Firewall" {
+		t.Errorf("expected BlockedByID=fw, BlockedByName=Firewall, got %+v", snap)
+	}
+}
+
+func TestStore_RecurringMaintenanceWindow(t *testing.T) {
+	now := time.Now()
+	day := strings.ToLower(now.Weekday().String()[:3])
+	start := now.Add(-10 * time.Minute).Format("15:04")
+	end := now.Add(10 * time.Minute).Format("15:04")
+
+	cfg := &config.Config{
+		Defaults: config.DefaultsConfig{Interval: 10 * time.Second, FailThreshold: 1},
+		Systems: []config.SystemConfig{
+			{
+				ID:   "sys",
+				Name: "Sys",
+				URL:  "https://sys.local",
+				MaintenanceWindows: []config.MaintenanceWindow{
+					{Days: []string{day}, Start: start, End: end},
+				},
+			},
+		},
+	}
+	store := NewStore(cfg)
+	snap, _ := store.GetSystem("sys")
+	if !snap.InMaintenance {
+		t.Errorf("expected system to be in recurring maintenance window")
 	}
 }

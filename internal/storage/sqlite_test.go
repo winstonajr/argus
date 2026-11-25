@@ -352,3 +352,75 @@ func TestStorage_TimedMaintenanceSurvivesReopen(t *testing.T) {
 		t.Errorf("forever override: want enabled without expiration, got %+v", ov)
 	}
 }
+
+func TestSQLite_V3MigrationBreakdownAndNotes(t *testing.T) {
+	db, err := Open(":memory:", 24*time.Hour, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+
+	var ver int
+	if err := db.db.QueryRow("PRAGMA user_version").Scan(&ver); err != nil {
+		t.Fatalf("read user_version: %v", err)
+	}
+	if ver != 3 {
+		t.Fatalf("expected user_version=3, got %d", ver)
+	}
+
+	now := time.Now().UTC()
+	err = db.writeBatch([]writeItem{
+		{
+			itemType: itemCheck,
+			sysID:    "erp",
+			kind:     "dns",
+			check: &checker.Result{
+				OK:             true,
+				StatusCode:     200,
+				Latency:        100 * time.Millisecond,
+				DNSLatency:     10 * time.Millisecond,
+				ConnectLatency: 20 * time.Millisecond,
+				TLSLatency:     30 * time.Millisecond,
+				TTFBLatency:    40 * time.Millisecond,
+				CheckedAt:      now,
+			},
+		},
+		{
+			itemType: itemEvent,
+			sysID:    "erp",
+			kind:     "dns",
+			event: &monitor.ChangeEvent{
+				SystemID:   "erp",
+				Kind:       "dns",
+				FromStatus: monitor.StatusUP,
+				ToStatus:   monitor.StatusDown,
+				Diagnosis:  "HTTP 502",
+				OccurredAt: now,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("writeBatch: %v", err)
+	}
+
+	ctx := context.Background()
+	stats, err := db.GetSystemUptimeStats(ctx, "erp", now.Add(-time.Hour), now.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("GetSystemUptimeStats: %v", err)
+	}
+	if stats.AvgDNSMs != 10 || stats.AvgConnectMs != 20 || stats.AvgTLSMs != 30 || stats.AvgTTFBMs != 40 {
+		t.Errorf("unexpected httptrace averages: %+v", stats)
+	}
+
+	evs, err := db.ListEvents(ctx, "erp", now.Add(-time.Hour), now.Add(time.Hour), 10)
+	if err != nil || len(evs) != 1 {
+		t.Fatalf("ListEvents: %v (len=%d)", err, len(evs))
+	}
+	if err := db.UpdateEventNote(ctx, evs[0].ID, "Reiniciando pod", true); err != nil {
+		t.Fatalf("UpdateEventNote: %v", err)
+	}
+	evs2, err := db.ListEvents(ctx, "erp", now.Add(-time.Hour), now.Add(time.Hour), 10)
+	if err != nil || len(evs2) != 1 || evs2[0].Note != "Reiniciando pod" || !evs2[0].PublicNote {
+		t.Errorf("expected persisted note & public_note, got %+v", evs2)
+	}
+}

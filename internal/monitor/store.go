@@ -120,23 +120,46 @@ func (cs *checkState) snapshot(now time.Time) CheckSnapshot {
 }
 
 type systemState struct {
-	cfg              config.SystemConfig
-	interval         time.Duration
-	dns              *checkState
-	ip               *checkState
-	inMaintenance    bool
-	maintenanceUntil time.Time
-	lastRun          time.Time
+	cfg                config.SystemConfig
+	interval           time.Duration
+	dns                *checkState
+	ip                 *checkState
+	inMaintenance      bool
+	maintenanceUntil   time.Time
+	maintenanceWindows []config.MaintenanceWindow
+	loc                *time.Location
+	lastRun            time.Time
 }
 
 func (sys *systemState) isInMaintenance(now time.Time) bool {
-	if !sys.inMaintenance {
-		return false
+	if sys.inMaintenance && (sys.maintenanceUntil.IsZero() || now.Before(sys.maintenanceUntil)) {
+		return true
 	}
-	if !sys.maintenanceUntil.IsZero() && !now.Before(sys.maintenanceUntil) {
-		return false
+	if len(sys.maintenanceWindows) > 0 {
+		localNow := now
+		if sys.loc != nil {
+			localNow = now.In(sys.loc)
+		}
+		for _, w := range sys.maintenanceWindows {
+			if w.Contains(localNow) {
+				return true
+			}
+		}
 	}
-	return true
+	return false
+}
+
+func (sys *systemState) worstStatus() Status {
+	if sys.dns.configured && sys.ip.configured {
+		return WorstStatus(sys.dns.status, sys.ip.status)
+	}
+	if sys.dns.configured {
+		return sys.dns.status
+	}
+	if sys.ip.configured {
+		return sys.ip.status
+	}
+	return StatusUnknown
 }
 
 // Store maintains the live in-memory state of all systems.
@@ -144,17 +167,30 @@ type Store struct {
 	mu               sync.RWMutex
 	systems          map[string]*systemState
 	order            []string
+	loc              *time.Location
 	startTime        time.Time
 	lastCheckTime    time.Time
 	eventSubscribers []func(ChangeEvent)
 	checkSubscribers []func(sysID string, kind string, res checker.Result)
 }
 
+func loadLocation(tz string) *time.Location {
+	if strings.TrimSpace(tz) == "" {
+		return time.Local
+	}
+	if loc, err := time.LoadLocation(tz); err == nil {
+		return loc
+	}
+	return time.Local
+}
+
 // NewStore initializes a new Store with systems from configuration.
 func NewStore(cfg *config.Config) *Store {
+	loc := loadLocation(cfg.Server.Timezone)
 	s := &Store{
 		systems:   make(map[string]*systemState),
 		order:     make([]string, 0, len(cfg.Systems)),
+		loc:       loc,
 		startTime: time.Now(),
 	}
 
@@ -172,12 +208,14 @@ func NewStore(cfg *config.Config) *Store {
 		ringSize := ringSizeForInterval(interval)
 
 		s.systems[sys.ID] = &systemState{
-			cfg:           sys,
-			interval:      interval,
-			dns:           newCheckState(hasDNS, failThresh, degLat, tlsWarnDays, ringSize),
-			ip:            newCheckState(hasIP, failThresh, degLat, tlsWarnDays, ringSize),
-			inMaintenance: sys.Maintenance,
-			lastRun:       time.Time{},
+			cfg:                sys,
+			interval:           interval,
+			dns:                newCheckState(hasDNS, failThresh, degLat, tlsWarnDays, ringSize),
+			ip:                 newCheckState(hasIP, failThresh, degLat, tlsWarnDays, ringSize),
+			inMaintenance:      sys.Maintenance,
+			maintenanceWindows: sys.EffectiveMaintenanceWindows(cfg.Defaults),
+			loc:                loc,
+			lastRun:            time.Time{},
 		}
 		s.order = append(s.order, sys.ID)
 	}
@@ -212,6 +250,8 @@ func (s *Store) ReloadConfig(cfg *config.Config) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	loc := loadLocation(cfg.Server.Timezone)
+	s.loc = loc
 	newSystems := make(map[string]*systemState, len(cfg.Systems))
 	newOrder := make([]string, 0, len(cfg.Systems))
 
@@ -226,12 +266,15 @@ func (s *Store) ReloadConfig(cfg *config.Config) {
 		tlsWarnDays := sys.EffectiveTLSWarnDays(cfg.Defaults)
 		interval := sys.EffectiveInterval(cfg.Defaults)
 		ringSize := ringSizeForInterval(interval)
+		windows := sys.EffectiveMaintenanceWindows(cfg.Defaults)
 
 		if existing, ok := s.systems[sys.ID]; ok {
 			existing.cfg = sys
 			existing.interval = interval
 			existing.inMaintenance = sys.Maintenance
 			existing.maintenanceUntil = time.Time{}
+			existing.maintenanceWindows = windows
+			existing.loc = loc
 			existing.dns.configured = hasDNS
 			existing.dns.failThreshold = failThresh
 			existing.dns.degradedLatency = degLat
@@ -245,11 +288,13 @@ func (s *Store) ReloadConfig(cfg *config.Config) {
 			newSystems[sys.ID] = existing
 		} else {
 			newSystems[sys.ID] = &systemState{
-				cfg:           sys,
-				interval:      interval,
-				dns:           newCheckState(hasDNS, failThresh, degLat, tlsWarnDays, ringSize),
-				ip:            newCheckState(hasIP, failThresh, degLat, tlsWarnDays, ringSize),
-				inMaintenance: sys.Maintenance,
+				cfg:                sys,
+				interval:           interval,
+				dns:                newCheckState(hasDNS, failThresh, degLat, tlsWarnDays, ringSize),
+				ip:                 newCheckState(hasIP, failThresh, degLat, tlsWarnDays, ringSize),
+				inMaintenance:      sys.Maintenance,
+				maintenanceWindows: windows,
+				loc:                loc,
 			}
 		}
 		newOrder = append(newOrder, sys.ID)
@@ -388,22 +433,35 @@ func (s *Store) recordResult(sysID string, kind string, res checker.Result) {
 		ipSnap := sys.ip.snapshot(now)
 		summary, detail := Diagnose(&dnsSnap, &ipSnap)
 
+		var suppressedBy string
+		var impacted []string
+		if newStatus == StatusDown || newStatus == StatusDegraded {
+			if blockedID, _ := s.blockedBy(sys); blockedID != "" {
+				suppressedBy = blockedID
+			}
+		}
+		if newStatus == StatusDown {
+			impacted = s.impactedDescendants(sys.cfg.ID)
+		}
+
 		event = &ChangeEvent{
-			SystemID:      sys.cfg.ID,
-			SystemName:    sys.cfg.Name,
-			Kind:          kind,
-			URL:           sys.cfg.URL,
-			IP:            sys.cfg.IP,
-			TCPPort:       sys.cfg.TCPPort,
-			FromStatus:    oldStatus,
-			ToStatus:      newStatus,
-			Diagnosis:     summary,
-			Detail:        detail,
-			StatusCode:    res.StatusCode,
-			Latency:       res.Latency,
-			Error:         res.Error,
-			InMaintenance: sys.isInMaintenance(now),
-			OccurredAt:    res.CheckedAt,
+			SystemID:        sys.cfg.ID,
+			SystemName:      sys.cfg.Name,
+			Kind:            kind,
+			URL:             sys.cfg.URL,
+			IP:              sys.cfg.IP,
+			TCPPort:         sys.cfg.TCPPort,
+			FromStatus:      oldStatus,
+			ToStatus:        newStatus,
+			Diagnosis:       summary,
+			Detail:          detail,
+			StatusCode:      res.StatusCode,
+			Latency:         res.Latency,
+			Error:           res.Error,
+			InMaintenance:   sys.isInMaintenance(now),
+			SuppressedBy:    suppressedBy,
+			ImpactedSystems: impacted,
+			OccurredAt:      res.CheckedAt,
 		}
 	}
 
@@ -474,14 +532,7 @@ func (s *Store) GetSummaryCounts() StatsSnapshot {
 	}
 
 	for _, sys := range s.systems {
-		worst := StatusUnknown
-		if sys.dns.configured && sys.ip.configured {
-			worst = WorstStatus(sys.dns.status, sys.ip.status)
-		} else if sys.dns.configured {
-			worst = sys.dns.status
-		} else if sys.ip.configured {
-			worst = sys.ip.status
-		}
+		worst := sys.worstStatus()
 
 		switch worst {
 		case StatusUP:
@@ -560,6 +611,8 @@ func (s *Store) buildSnapshot(sys *systemState) SystemSnapshot {
 	// Latency history for sparkline
 	latencies := buildLatencyHistory(sys)
 
+	blockedByID, blockedByName := s.blockedBy(sys)
+
 	return SystemSnapshot{
 		ID:             sys.cfg.ID,
 		Name:           sys.cfg.Name,
@@ -570,6 +623,9 @@ func (s *Store) buildSnapshot(sys *systemState) SystemSnapshot {
 		IsIPHTTP:       sys.cfg.IsIPHTTP(),
 		TCPPort:        sys.cfg.TCPPort,
 		Interval:       sys.interval,
+		DependsOn:      sys.cfg.DependsOn,
+		BlockedByID:    blockedByID,
+		BlockedByName:  blockedByName,
 		WorstStatus:    worst,
 		Diagnosis:      diagSummary,
 		InMaintenance:  sys.isInMaintenance(now),
@@ -583,6 +639,54 @@ func (s *Store) buildSnapshot(sys *systemState) SystemSnapshot {
 		LatencyHistory: latencies,
 		JustChanged:    justChanged,
 	}
+}
+
+func (s *Store) blockedBy(sys *systemState) (string, string) {
+	if sys == nil || sys.cfg.DependsOn == "" {
+		return "", ""
+	}
+	visited := map[string]bool{sys.cfg.ID: true}
+	currID := sys.cfg.DependsOn
+	for currID != "" && !visited[currID] {
+		visited[currID] = true
+		parent, ok := s.systems[currID]
+		if !ok {
+			return "", ""
+		}
+		if parent.worstStatus() == StatusDown {
+			return parent.cfg.ID, parent.cfg.Name
+		}
+		currID = parent.cfg.DependsOn
+	}
+	return "", ""
+}
+
+func (s *Store) impactedDescendants(parentID string) []string {
+	if parentID == "" {
+		return nil
+	}
+	childrenByParent := make(map[string][]*systemState)
+	for _, id := range s.order {
+		if sys, ok := s.systems[id]; ok && sys.cfg.DependsOn != "" {
+			childrenByParent[sys.cfg.DependsOn] = append(childrenByParent[sys.cfg.DependsOn], sys)
+		}
+	}
+	var impacted []string
+	visited := map[string]bool{parentID: true}
+	queue := []string{parentID}
+	for len(queue) > 0 {
+		curr := queue[0]
+		queue = queue[1:]
+		for _, child := range childrenByParent[curr] {
+			if visited[child.cfg.ID] {
+				continue
+			}
+			visited[child.cfg.ID] = true
+			impacted = append(impacted, child.cfg.Name)
+			queue = append(queue, child.cfg.ID)
+		}
+	}
+	return impacted
 }
 
 func buildHeartbeat(sys *systemState) []HeartbeatTick {

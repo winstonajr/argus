@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -105,6 +106,7 @@ func main() {
 		db.AsyncSaveCheck(sysID, kind, res)
 	})
 	notifier := notify.New(cfg.Alerts)
+	notifier.SetSystems(cfg.Systems)
 	if notifier.Enabled() {
 		slog.Info("central de notificações ativada", "cooldown", cfg.Alerts.Cooldown)
 	}
@@ -130,6 +132,11 @@ func main() {
 	defer rootCancel()
 
 	scheduler.Start(rootCtx)
+	notifier.StartEscalationLoop(rootCtx, func(sysID string) bool {
+		snap, ok := store.GetSystem(sysID)
+		return ok && !snap.InMaintenance && snap.BlockedByID == ""
+	})
+	go runSLAReportLoop(rootCtx, cfg.Alerts.SLAReport, store, db, notifier)
 	slog.Info("scheduler de monitoramento iniciado", "systems", len(cfg.Systems))
 
 	webServer, err := web.NewServer(cfg, store, db)
@@ -199,10 +206,16 @@ func main() {
 		}
 		ovCancel()
 		notifier.UpdateConfig(newCfg.Alerts)
+		notifier.SetSystems(newCfg.Systems)
 		webServer.UpdateConfig(newCfg)
 		rootCtx, rootCancel = context.WithCancel(context.Background())
 		scheduler = monitor.NewScheduler(newCfg, store, httpChecker, pingChecker)
 		scheduler.Start(rootCtx)
+		notifier.StartEscalationLoop(rootCtx, func(sysID string) bool {
+			snap, ok := store.GetSystem(sysID)
+			return ok && !snap.InMaintenance && snap.BlockedByID == ""
+		})
+		go runSLAReportLoop(rootCtx, newCfg.Alerts.SLAReport, store, db, notifier)
 		webServer.SetCheckTrigger(scheduler.CheckNow)
 		slog.Info("configuração recarregada", "systems", len(newCfg.Systems))
 	}
@@ -261,4 +274,120 @@ loop:
 	if exitCode != 0 {
 		os.Exit(exitCode)
 	}
+}
+
+func runSLAReportLoop(ctx context.Context, cfg config.SLAReportConfig, store *monitor.Store, db *storage.DB, notifier *notify.Notifier) {
+	if cfg.Schedule == "" || db == nil || notifier == nil {
+		return
+	}
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	var lastSentKey string
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			if !matchesSLASchedule(cfg, now) {
+				continue
+			}
+			key := now.Format("2006-01-02-15-04")
+			if key == lastSentKey {
+				continue
+			}
+			lastSentKey = key
+			title, summary := buildSLAReport(ctx, cfg.Schedule, store, db, now)
+			if err := notifier.SendSLAReport(ctx, title, summary); err != nil {
+				slog.Warn("falha ao enviar relatório periódico de SLA", "err", err)
+			}
+		}
+	}
+}
+
+func matchesSLASchedule(cfg config.SLAReportConfig, now time.Time) bool {
+	if cfg.Schedule == "" {
+		return false
+	}
+	if now.Format("15:04") != cfg.Hour {
+		return false
+	}
+	switch cfg.Schedule {
+	case "weekly":
+		return strings.EqualFold(now.Weekday().String()[:3], cfg.Day)
+	case "monthly":
+		var dayNum int
+		_, _ = fmt.Sscanf(cfg.Day, "%d", &dayNum)
+		return now.Day() == dayNum
+	default:
+		return false
+	}
+}
+
+func buildSLAReport(ctx context.Context, schedule string, store *monitor.Store, db *storage.DB, now time.Time) (string, string) {
+	window := 7 * 24 * time.Hour
+	periodLabel := "7 dias"
+	if schedule == "monthly" {
+		window = 30 * 24 * time.Hour
+		periodLabel = "30 dias"
+	}
+	from := now.Add(-window).UTC()
+	to := now.UTC()
+
+	systems := store.GetAllSystems()
+	var totalUptime float64
+	var uptimeCount int
+	var totalMTTR time.Duration
+	var mttrCount int
+	var topIncidents []string
+	var expiringSSL []string
+
+	for _, sys := range systems {
+		stats, err := db.GetSystemUptimeStats(ctx, sys.ID, from, to)
+		if err == nil {
+			u := stats.DNSUptime
+			if sys.IP != "" && sys.URL == "" {
+				u = stats.IPUptime
+			}
+			totalUptime += u
+			uptimeCount++
+			if stats.MTTR > 0 {
+				totalMTTR += stats.MTTR
+				mttrCount++
+			}
+			if stats.IncidentCount > 0 {
+				topIncidents = append(topIncidents, fmt.Sprintf("%s (%d)", sys.Name, stats.IncidentCount))
+			}
+		}
+		if sys.DNS.Configured && sys.DNS.LastResult.HasTLS && sys.DNS.LastResult.TLSDaysLeft <= sys.DNS.TLSWarnDays {
+			expiringSSL = append(expiringSSL, fmt.Sprintf("%s (%dd)", sys.Name, sys.DNS.LastResult.TLSDaysLeft))
+		}
+	}
+
+	avgUptime := 100.0
+	if uptimeCount > 0 {
+		avgUptime = totalUptime / float64(uptimeCount)
+	}
+	avgMTTR := "0s"
+	if mttrCount > 0 {
+		avgMTTR = (totalMTTR / time.Duration(mttrCount)).Truncate(time.Second).String()
+	}
+
+	title := fmt.Sprintf("Relatório SLA Argus (%s)", periodLabel)
+	var lines []string
+	lines = append(lines, fmt.Sprintf("Sistemas monitorados: %d", len(systems)))
+	lines = append(lines, fmt.Sprintf("Disponibilidade média: %.2f%%", avgUptime))
+	lines = append(lines, fmt.Sprintf("MTTR médio: %s", avgMTTR))
+	if len(topIncidents) > 0 {
+		if len(topIncidents) > 5 {
+			topIncidents = topIncidents[:5]
+		}
+		lines = append(lines, "Sistemas com incidentes: "+strings.Join(topIncidents, ", "))
+	} else {
+		lines = append(lines, "Nenhum incidente registrado no período.")
+	}
+	if len(expiringSSL) > 0 {
+		lines = append(lines, "Certificados SSL próximos do vencimento: "+strings.Join(expiringSSL, ", "))
+	}
+	return title, strings.Join(lines, "\n")
 }

@@ -25,6 +25,7 @@ defaults:
 # Notificações (também configuráveis via variáveis ARGUS_ALERTS_* no Docker Compose / .env)
 alerts:
   cooldown: 5m
+  # repeat_interval: 30m
   notify_on_degraded: false
   # public_url: "${ARGUS_PUBLIC_URL:-}"
   # webhook:
@@ -33,6 +34,16 @@ alerts:
   #   webhook_url: "${ARGUS_ALERTS_SLACK_WEBHOOK_URL:-}"
   # discord:
   #   webhook_url: "${ARGUS_ALERTS_DISCORD_WEBHOOK_URL:-}"
+  # teams:
+  #   webhook_url: "${ARGUS_ALERTS_TEAMS_WEBHOOK_URL:-}"
+  # ntfy:
+  #   url: "${ARGUS_ALERTS_NTFY_URL:-https://ntfy.sh}"
+  #   topic: "${ARGUS_ALERTS_NTFY_TOPIC:-}"
+  #   token: "${ARGUS_ALERTS_NTFY_TOKEN:-}"
+  # whatsapp:
+  #   url: "${ARGUS_ALERTS_WHATSAPP_URL:-}"
+  #   token: "${ARGUS_ALERTS_WHATSAPP_TOKEN:-}"
+  #   target: "${ARGUS_ALERTS_WHATSAPP_TARGET:-}"
   # telegram:
   #   bot_token: "${ARGUS_ALERTS_TELEGRAM_BOT_TOKEN:-}"
   #   chat_id: "${ARGUS_ALERTS_TELEGRAM_CHAT_ID:-}"
@@ -43,6 +54,14 @@ alerts:
   #   password: "${ARGUS_ALERTS_EMAIL_PASSWORD:-}"
   #   from: "${ARGUS_ALERTS_EMAIL_FROM:-}"
   #   to: ["ops@empresa.local"]
+  # routes:
+  #   - match_groups: ["Infraestrutura"]
+  #     telegram:
+  #       chat_id: "-100999888777"
+  # sla_report:
+  #   schedule: "weekly" # weekly | monthly
+  #   day: "mon"         # mon..sun (weekly) ou 1..28 (monthly)
+  #   hour: "08:00"
 
 systems:
   - id: "erp"

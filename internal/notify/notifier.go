@@ -23,6 +23,11 @@ import (
 	"argus/internal/monitor"
 )
 
+type systemMeta struct {
+	group string
+	tags  []string
+}
+
 // Notifier dispatches status change alerts to configured channels with cooldown control.
 type Notifier struct {
 	cfg             config.AlertsConfig
@@ -32,6 +37,8 @@ type Notifier struct {
 	wg              sync.WaitGroup
 	lastSent        map[string]time.Time
 	downSince       map[string]time.Time
+	downEvents      map[string]monitor.ChangeEvent
+	systems         map[string]systemMeta
 }
 
 // New creates a Notifier from AlertsConfig.
@@ -44,7 +51,23 @@ func New(cfg config.AlertsConfig) *Notifier {
 		telegramBaseURL: "https://api.telegram.org",
 		lastSent:        make(map[string]time.Time),
 		downSince:       make(map[string]time.Time),
+		downEvents:      make(map[string]monitor.ChangeEvent),
+		systems:         make(map[string]systemMeta),
 	}
+}
+
+// SetSystems updates system metadata used for alert routing (groups and tags).
+func (n *Notifier) SetSystems(systems []config.SystemConfig) {
+	meta := make(map[string]systemMeta, len(systems))
+	for _, s := range systems {
+		meta[s.ID] = systemMeta{
+			group: strings.TrimSpace(s.Group),
+			tags:  s.Tags,
+		}
+	}
+	n.mu.Lock()
+	n.systems = meta
+	n.mu.Unlock()
 }
 
 // UpdateConfig replaces the alerts configuration at runtime.
@@ -63,20 +86,40 @@ func (n *Notifier) Enabled() bool {
 }
 
 func alertsEnabled(cfg config.AlertsConfig) bool {
-	return strings.TrimSpace(cfg.Webhook.URL) != "" ||
+	if strings.TrimSpace(cfg.Webhook.URL) != "" ||
 		strings.TrimSpace(cfg.Slack.WebhookURL) != "" ||
 		strings.TrimSpace(cfg.Discord.WebhookURL) != "" ||
+		strings.TrimSpace(cfg.Teams.WebhookURL) != "" ||
+		(strings.TrimSpace(cfg.Ntfy.URL) != "" && strings.TrimSpace(cfg.Ntfy.Topic) != "") ||
+		(strings.TrimSpace(cfg.WhatsApp.URL) != "" && strings.TrimSpace(cfg.WhatsApp.Target) != "") ||
 		(strings.TrimSpace(cfg.Telegram.BotToken) != "" && strings.TrimSpace(cfg.Telegram.ChatID) != "") ||
-		(strings.TrimSpace(cfg.Email.SMTPHost) != "" && len(cfg.Email.To) > 0)
+		(strings.TrimSpace(cfg.Email.SMTPHost) != "" && len(cfg.Email.To) > 0) {
+		return true
+	}
+	for _, r := range cfg.Routes {
+		if strings.TrimSpace(r.Webhook.URL) != "" ||
+			strings.TrimSpace(r.Slack.WebhookURL) != "" ||
+			strings.TrimSpace(r.Discord.WebhookURL) != "" ||
+			strings.TrimSpace(r.Teams.WebhookURL) != "" ||
+			(strings.TrimSpace(r.Ntfy.URL) != "" && strings.TrimSpace(r.Ntfy.Topic) != "") ||
+			(strings.TrimSpace(r.WhatsApp.URL) != "" && strings.TrimSpace(r.WhatsApp.Target) != "") ||
+			(strings.TrimSpace(r.Telegram.BotToken) != "" && strings.TrimSpace(r.Telegram.ChatID) != "") ||
+			strings.TrimSpace(r.Telegram.ChatID) != "" ||
+			len(r.Email.To) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // HandleEvent evaluates a status transition and dispatches notifications asynchronously.
 func (n *Notifier) HandleEvent(e monitor.ChangeEvent) {
 	key := e.SystemID + ":" + e.Kind
-	if e.InMaintenance {
+	if e.InMaintenance || e.SuppressedBy != "" {
 		if e.ToStatus == monitor.StatusUP {
 			n.mu.Lock()
 			delete(n.downSince, key)
+			delete(n.downEvents, key)
 			n.mu.Unlock()
 		}
 		return
@@ -88,7 +131,7 @@ func (n *Notifier) HandleEvent(e monitor.ChangeEvent) {
 	var mttr time.Duration
 
 	n.mu.Lock()
-	cfg := n.cfg
+	cfg := resolveAlertConfig(n.cfg, n.systems[e.SystemID], e.SystemID)
 	if !alertsEnabled(cfg) {
 		n.mu.Unlock()
 		return
@@ -102,6 +145,7 @@ func (n *Notifier) HandleEvent(e monitor.ChangeEvent) {
 				n.downSince[key] = now
 			}
 		}
+		n.downEvents[key] = e
 		cdKey := key + ":DOWN"
 		if last, ok := n.lastSent[cdKey]; !ok || cfg.Cooldown <= 0 || now.Sub(last) >= cfg.Cooldown {
 			n.lastSent[cdKey] = now
@@ -118,6 +162,7 @@ func (n *Notifier) HandleEvent(e monitor.ChangeEvent) {
 		}
 
 	case monitor.StatusUP:
+		delete(n.downEvents, key)
 		if start, ok := n.downSince[key]; ok {
 			if !e.OccurredAt.IsZero() && e.OccurredAt.After(start) {
 				mttr = e.OccurredAt.Sub(start)
@@ -293,8 +338,347 @@ func (n *Notifier) sendToChannels(ctx context.Context, cfg config.AlertsConfig, 
 		}()
 	}
 
+	if u := strings.TrimSpace(cfg.Teams.WebhookURL); u != "" {
+		wg.Add(1)
+		go func(webhookURL string) {
+			defer wg.Done()
+			recordResult("teams", n.postJSON(ctx, webhookURL, buildTeamsPayload(ac), nil))
+		}(u)
+	}
+
+	if base := strings.TrimRight(strings.TrimSpace(cfg.Ntfy.URL), "/"); base != "" && strings.TrimSpace(cfg.Ntfy.Topic) != "" {
+		ntfyURL := base + "/" + strings.TrimLeft(strings.TrimSpace(cfg.Ntfy.Topic), "/")
+		wg.Add(1)
+		go func(u string, token string) {
+			defer wg.Done()
+			recordResult("ntfy", n.sendNtfy(ctx, u, token, e, ac))
+		}(ntfyURL, strings.TrimSpace(cfg.Ntfy.Token))
+	}
+
+	if u := strings.TrimSpace(cfg.WhatsApp.URL); u != "" && strings.TrimSpace(cfg.WhatsApp.Target) != "" {
+		wg.Add(1)
+		go func(waURL string, waCfg config.WhatsAppAlertConfig) {
+			defer wg.Done()
+			payload := map[string]any{
+				"target":    waCfg.Target,
+				"number":    waCfg.Target,
+				"text":      ac.PlainTitle + "\n\n" + ac.PlainBody,
+				"system_id": e.SystemID,
+				"status":    string(e.ToStatus),
+			}
+			var headers map[string]string
+			if tok := strings.TrimSpace(waCfg.Token); tok != "" {
+				headers = map[string]string{"Authorization": "Bearer " + tok}
+			}
+			recordResult("whatsapp", n.postJSON(ctx, waURL, payload, headers))
+		}(u, cfg.WhatsApp)
+	}
+
 	wg.Wait()
 	return sent, errors.Join(errs...)
+}
+
+func resolveAlertConfig(base config.AlertsConfig, meta systemMeta, sysID string) config.AlertsConfig {
+	if len(base.Routes) == 0 {
+		return base
+	}
+	res := base
+	for _, r := range base.Routes {
+		if !routeMatches(r, meta, sysID) {
+			continue
+		}
+		if strings.TrimSpace(r.Webhook.URL) != "" {
+			res.Webhook = r.Webhook
+		}
+		if strings.TrimSpace(r.Slack.WebhookURL) != "" {
+			res.Slack = r.Slack
+		}
+		if strings.TrimSpace(r.Discord.WebhookURL) != "" {
+			res.Discord = r.Discord
+		}
+		if strings.TrimSpace(r.Teams.WebhookURL) != "" {
+			res.Teams = r.Teams
+		}
+		if strings.TrimSpace(r.Telegram.BotToken) != "" {
+			res.Telegram.BotToken = r.Telegram.BotToken
+		}
+		if strings.TrimSpace(r.Telegram.ChatID) != "" {
+			res.Telegram.ChatID = r.Telegram.ChatID
+		}
+		if strings.TrimSpace(r.Email.SMTPHost) != "" {
+			res.Email.SMTPHost = r.Email.SMTPHost
+		}
+		if r.Email.SMTPPort > 0 {
+			res.Email.SMTPPort = r.Email.SMTPPort
+		}
+		if strings.TrimSpace(r.Email.Username) != "" {
+			res.Email.Username = r.Email.Username
+		}
+		if strings.TrimSpace(r.Email.Password) != "" {
+			res.Email.Password = r.Email.Password
+		}
+		if strings.TrimSpace(r.Email.From) != "" {
+			res.Email.From = r.Email.From
+		}
+		if len(r.Email.To) > 0 {
+			res.Email.To = r.Email.To
+		}
+		if strings.TrimSpace(r.Ntfy.URL) != "" {
+			res.Ntfy.URL = r.Ntfy.URL
+		}
+		if strings.TrimSpace(r.Ntfy.Topic) != "" {
+			res.Ntfy.Topic = r.Ntfy.Topic
+		}
+		if strings.TrimSpace(r.Ntfy.Token) != "" {
+			res.Ntfy.Token = r.Ntfy.Token
+		}
+		if strings.TrimSpace(r.WhatsApp.URL) != "" {
+			res.WhatsApp.URL = r.WhatsApp.URL
+		}
+		if strings.TrimSpace(r.WhatsApp.Token) != "" {
+			res.WhatsApp.Token = r.WhatsApp.Token
+		}
+		if strings.TrimSpace(r.WhatsApp.Target) != "" {
+			res.WhatsApp.Target = r.WhatsApp.Target
+		}
+	}
+	return res
+}
+
+func routeMatches(r config.AlertRouteConfig, meta systemMeta, sysID string) bool {
+	for _, id := range r.MatchSystems {
+		if strings.EqualFold(strings.TrimSpace(id), sysID) {
+			return true
+		}
+	}
+	if meta.group != "" {
+		for _, g := range r.MatchGroups {
+			if strings.EqualFold(strings.TrimSpace(g), meta.group) {
+				return true
+			}
+		}
+	}
+	if len(meta.tags) > 0 {
+		for _, rt := range r.MatchTags {
+			for _, st := range meta.tags {
+				if strings.EqualFold(strings.TrimSpace(rt), strings.TrimSpace(st)) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// StartEscalationLoop periodically re-sends reminders for prolonged DOWN systems when repeat_interval > 0.
+func (n *Notifier) StartEscalationLoop(ctx context.Context, isEligible func(sysID string) bool) {
+	n.wg.Add(1)
+	go func() {
+		defer n.wg.Done()
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				n.checkEscalations(ctx, isEligible)
+			}
+		}
+	}()
+}
+
+func (n *Notifier) checkEscalations(ctx context.Context, isEligible func(sysID string) bool) {
+	now := time.Now()
+	type pendingReminder struct {
+		cfg   config.AlertsConfig
+		event monitor.ChangeEvent
+	}
+	var toSend []pendingReminder
+
+	n.mu.Lock()
+	interval := n.cfg.RepeatInterval
+	if interval <= 0 || len(n.downEvents) == 0 {
+		n.mu.Unlock()
+		return
+	}
+	for key, ev := range n.downEvents {
+		if isEligible != nil && !isEligible(ev.SystemID) {
+			continue
+		}
+		cdKey := key + ":DOWN"
+		last, ok := n.lastSent[cdKey]
+		if !ok || now.Sub(last) < interval {
+			continue
+		}
+		cfg := resolveAlertConfig(n.cfg, n.systems[ev.SystemID], ev.SystemID)
+		if !alertsEnabled(cfg) {
+			continue
+		}
+		n.lastSent[cdKey] = now
+		dur := now.Sub(n.downSince[key]).Truncate(time.Second)
+		remEv := ev
+		remEv.OccurredAt = now
+		remEv.Diagnosis = i18n.Pick(
+			fmt.Sprintf("Lembrete: fora do ar há %s (%s)", dur, ev.Diagnosis),
+			fmt.Sprintf("Reminder: down for %s (%s)", dur, ev.Diagnosis),
+		)
+		toSend = append(toSend, pendingReminder{cfg: cfg, event: remEv})
+	}
+	n.mu.Unlock()
+
+	for _, item := range toSend {
+		n.dispatch(ctx, item.cfg, item.event, 0)
+	}
+}
+
+// SendSLAReport dispatches a periodic SLA summary report to all configured global channels.
+func (n *Notifier) SendSLAReport(ctx context.Context, title, summary string) error {
+	n.mu.Lock()
+	cfg := n.cfg
+	n.mu.Unlock()
+	if !alertsEnabled(cfg) {
+		return ErrNoChannelsConfigured
+	}
+	ev := monitor.ChangeEvent{
+		SystemID:   "argus-sla-report",
+		SystemName: title,
+		Kind:       "sla",
+		ToStatus:   monitor.StatusUP,
+		Diagnosis:  title,
+		Detail:     summary,
+		OccurredAt: time.Now(),
+	}
+	ac := buildAlertContext(ev, 0, cfg.PublicURL, false)
+	ac.PlainTitle = "📊 " + title
+	ac.EmailSubject = "📊 " + title
+	ac.PlainBody = summary
+	_, err := n.sendToChannels(ctx, cfg, ev, 0, ac)
+	return err
+}
+
+func (n *Notifier) sendNtfy(ctx context.Context, url, token string, e monitor.ChangeEvent, ac alertContext) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(ac.PlainBody))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Title", sanitizeHeader(ac.PlainTitle))
+	priority := "default"
+	tags := "white_check_mark"
+	switch e.ToStatus {
+	case monitor.StatusDown:
+		priority = "urgent"
+		tags = "rotating_light"
+	case monitor.StatusDegraded:
+		priority = "high"
+		tags = "warning"
+	}
+	req.Header.Set("Priority", priority)
+	req.Header.Set("Tags", tags)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if ac.PublicURL != "" {
+		req.Header.Set("Click", ac.PublicURL)
+	}
+	resp, err := n.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		_ = resp.Body.Close()
+	}()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func buildTeamsPayload(ac alertContext) map[string]any {
+	color := "Good"
+	switch ac.Badge {
+	case "FORA DO AR", "DOWN":
+		color = "Attention"
+	case "INSTÁVEL", "DEGRADED":
+		color = "Warning"
+	}
+
+	facts := []map[string]string{
+		{"title": i18n.Pick("Sistema", "System"), "value": fmt.Sprintf("%s (%s)", ac.SystemName, ac.KindUpper)},
+	}
+	if ac.URL != "" {
+		facts = append(facts, map[string]string{"title": "DNS", "value": ac.URL})
+	}
+	if ac.IP != "" {
+		facts = append(facts, map[string]string{"title": "IP", "value": ac.IP})
+	}
+	if ac.TCPPort > 0 {
+		facts = append(facts, map[string]string{"title": i18n.Pick("Porta TCP", "TCP Port"), "value": fmt.Sprintf("%d", ac.TCPPort)})
+	}
+	if ac.Detail != "" {
+		facts = append(facts, map[string]string{"title": i18n.Pick("Detalhe", "Detail"), "value": ac.Detail})
+	}
+	if ac.MTTR != "" {
+		facts = append(facts, map[string]string{"title": "MTTR", "value": ac.MTTR})
+	}
+	if len(ac.ImpactedSystems) > 0 {
+		facts = append(facts, map[string]string{
+			"title": i18n.Pick("Sistemas impactados", "Impacted systems"),
+			"value": fmt.Sprintf("%d (%s)", len(ac.ImpactedSystems), strings.Join(ac.ImpactedSystems, ", ")),
+		})
+	}
+	if ac.OccurredAt != "" {
+		facts = append(facts, map[string]string{"title": i18n.Pick("Horário", "Time"), "value": ac.OccurredAt})
+	}
+
+	body := []map[string]any{
+		{
+			"type":   "TextBlock",
+			"size":   "Medium",
+			"weight": "Bolder",
+			"color":  color,
+			"text":   ac.PlainTitle,
+			"wrap":   true,
+		},
+	}
+	if ac.Diagnosis != "" {
+		body = append(body, map[string]any{
+			"type": "TextBlock",
+			"text": ac.Diagnosis,
+			"wrap": true,
+		})
+	}
+	body = append(body, map[string]any{
+		"type":  "FactSet",
+		"facts": facts,
+	})
+
+	card := map[string]any{
+		"$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+		"type":    "AdaptiveCard",
+		"version": "1.4",
+		"body":    body,
+	}
+	if ac.PublicURL != "" {
+		card["actions"] = []map[string]any{
+			{
+				"type":  "Action.OpenUrl",
+				"title": i18n.Pick("Abrir no Argus", "Open in Argus"),
+				"url":   ac.PublicURL,
+			},
+		}
+	}
+
+	return map[string]any{
+		"type": "message",
+		"attachments": []map[string]any{
+			{
+				"contentType": "application/vnd.microsoft.card.adaptive",
+				"content":     card,
+			},
+		},
+	}
 }
 
 func (n *Notifier) postJSON(ctx context.Context, url string, payload any, headers map[string]string) error {
@@ -429,24 +813,25 @@ func (n *Notifier) sendEmail(ctx context.Context, emailCfg config.EmailAlertConf
 }
 
 type alertContext struct {
-	Emoji        string
-	Badge        string
-	ColorHex     string
-	ColorInt     int
-	SystemName   string
-	KindUpper    string
-	URL          string
-	IP           string
-	TCPPort      int
-	Diagnosis    string
-	Detail       string
-	OccurredAt   string
-	MTTR         string
-	PublicURL    string
-	IsRecovery   bool
-	PlainTitle   string
-	PlainBody    string
-	EmailSubject string
+	Emoji           string
+	Badge           string
+	ColorHex        string
+	ColorInt        int
+	SystemName      string
+	KindUpper       string
+	URL             string
+	IP              string
+	TCPPort         int
+	Diagnosis       string
+	Detail          string
+	OccurredAt      string
+	MTTR            string
+	PublicURL       string
+	ImpactedSystems []string
+	IsRecovery      bool
+	PlainTitle      string
+	PlainBody       string
+	EmailSubject    string
 }
 
 func statusVisual(status monitor.Status, isTest bool) (emoji, badge, colorHex string, colorInt int) {
@@ -519,23 +904,24 @@ func buildAlertContext(e monitor.ChangeEvent, mttr time.Duration, publicURL stri
 	}
 
 	ac := alertContext{
-		Emoji:        emoji,
-		Badge:        badge,
-		ColorHex:     colorHex,
-		ColorInt:     colorInt,
-		SystemName:   sysName,
-		KindUpper:    kindUpper,
-		URL:          strings.TrimSpace(e.URL),
-		IP:           strings.TrimSpace(e.IP),
-		TCPPort:      e.TCPPort,
-		Diagnosis:    diag,
-		Detail:       detail,
-		OccurredAt:   occurredStr,
-		MTTR:         mttrStr,
-		PublicURL:    pub,
-		IsRecovery:   e.ToStatus == monitor.StatusUP && !isTest,
-		PlainTitle:   plainTitle,
-		EmailSubject: emailSubject,
+		Emoji:           emoji,
+		Badge:           badge,
+		ColorHex:        colorHex,
+		ColorInt:        colorInt,
+		SystemName:      sysName,
+		KindUpper:       kindUpper,
+		URL:             strings.TrimSpace(e.URL),
+		IP:              strings.TrimSpace(e.IP),
+		TCPPort:         e.TCPPort,
+		Diagnosis:       diag,
+		Detail:          detail,
+		OccurredAt:      occurredStr,
+		MTTR:            mttrStr,
+		PublicURL:       pub,
+		ImpactedSystems: e.ImpactedSystems,
+		IsRecovery:      e.ToStatus == monitor.StatusUP && !isTest,
+		PlainTitle:      plainTitle,
+		EmailSubject:    emailSubject,
 	}
 	ac.PlainBody = formatPlainBody(ac)
 	return ac
@@ -566,6 +952,9 @@ func formatPlainBody(ac alertContext) string {
 	}
 	if ac.MTTR != "" {
 		lines = append(lines, i18n.Pick("Duração da queda (MTTR): ", "Downtime (MTTR): ")+ac.MTTR)
+	}
+	if len(ac.ImpactedSystems) > 0 {
+		lines = append(lines, fmt.Sprintf("%s%d (%s)", i18n.Pick("Sistemas impactados: ", "Impacted systems: "), len(ac.ImpactedSystems), strings.Join(ac.ImpactedSystems, ", ")))
 	}
 	if ac.OccurredAt != "" {
 		lines = append(lines, i18n.Pick("Horário: ", "Time: ")+ac.OccurredAt)
@@ -609,6 +998,9 @@ func formatTelegramHTML(ac alertContext) string {
 	}
 	if ac.MTTR != "" {
 		fmt.Fprintf(&b, "<b>%s:</b> <code>%s</code>\n", i18n.Pick("Duração da queda (MTTR)", "Downtime (MTTR)"), esc(ac.MTTR))
+	}
+	if len(ac.ImpactedSystems) > 0 {
+		fmt.Fprintf(&b, "<b>%s:</b> %d (%s)\n", i18n.Pick("Sistemas impactados", "Impacted systems"), len(ac.ImpactedSystems), esc(strings.Join(ac.ImpactedSystems, ", ")))
 	}
 	if ac.OccurredAt != "" {
 		fmt.Fprintf(&b, "<b>%s:</b> %s\n", i18n.Pick("Horário", "Time"), esc(ac.OccurredAt))

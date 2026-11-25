@@ -56,6 +56,7 @@
             {{.ToStatus}}
           </span>
           <span>{{.Diagnosis}}</span>
+          {{if .PublicNote}}<div class="event-public-note">{{.PublicNote}}</div>{{end}}
         </div>
       </div>
       {{end}}

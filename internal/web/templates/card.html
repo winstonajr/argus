@@ -20,6 +20,7 @@
       </span>
     </div>
     <span class="card__banner-uptime mono">
+      {{if .BlockedByName}}<span class="dep-badge">DEPENDE: {{.BlockedByName}}</span>{{end}}
       {{if .InMaintenance}}<span class="maintenance-badge">{{.T.MaintenanceUpper}}</span>{{end}}
       1h: {{printf "%.1f%%" .Uptime1h}}
     </span>

@@ -3,6 +3,7 @@ package web
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -694,5 +695,49 @@ func TestServer_JSONErrorsAndCSVSanitization(t *testing.T) {
 	}
 	if got := sanitizeCSVCell("normal text"); got != "normal text" {
 		t.Errorf("expected normal CSV cell untouched, got %q", got)
+	}
+}
+
+func TestServer_UpdateEventNote(t *testing.T) {
+	server, _, db := setupTestServer(t)
+	defer db.Close()
+
+	db.AsyncSaveEvent(monitor.ChangeEvent{
+		SystemID:   "erp",
+		Kind:       "dns",
+		FromStatus: monitor.StatusUP,
+		ToStatus:   monitor.StatusDown,
+		Diagnosis:  "HTTP 502",
+		OccurredAt: time.Now().UTC(),
+	})
+	// Wait briefly for async batch flush or close-reopen? Let's flush by polling ListEvents briefly
+	var evID int64
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		evs, _ := db.ListEvents(context.Background(), "erp", time.Now().Add(-time.Hour), time.Now().Add(time.Hour), 10)
+		if len(evs) > 0 {
+			evID = evs[0].ID
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if evID == 0 {
+		t.Fatalf("timed out waiting for event to flush to sqlite")
+	}
+
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/events/%d/note", evID), strings.NewReader(`{"note":"Manutenção emergencial","public_note":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	server.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	reqNotFound := httptest.NewRequest(http.MethodPost, "/api/events/999999/note", strings.NewReader(`{"note":"x","public_note":false}`))
+	reqNotFound.Header.Set("Content-Type", "application/json")
+	rrNotFound := httptest.NewRecorder()
+	server.ServeHTTP(rrNotFound, reqNotFound)
+	if rrNotFound.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for unknown event, got %d", rrNotFound.Code)
 	}
 }

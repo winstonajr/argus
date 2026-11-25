@@ -45,6 +45,9 @@ type cardViewModel struct {
 	TLSDaysLeft          int
 	TLSExpiringSoon      bool
 	InMaintenance        bool
+	DependsOn            string
+	BlockedByID          string
+	BlockedByName        string
 	JustChanged          bool
 }
 
@@ -54,15 +57,71 @@ type heartbeatViewModel struct {
 }
 
 type eventViewModel struct {
+	ID                  int64
 	Kind                string
 	FromStatus          string
 	ToStatus            string
 	ToStatusLower       string
 	Diagnosis           string
 	Detail              string
+	Note                string
+	PublicNote          bool
 	OccurredAtFormatted string
 	DateGroup           string
 	DurationStr         string
+}
+
+type httpTraceBreakdownViewModel struct {
+	HasData   bool
+	DNSMs     int64
+	ConnectMs int64
+	TLSMs     int64
+	TTFBMs    int64
+	TotalMs   int64
+	DNSX      string
+	DNSW      string
+	ConnectX  string
+	ConnectW  string
+	TLSX      string
+	TLSW      string
+	TTFBX     string
+	TTFBW     string
+}
+
+func buildHTTPTraceBreakdown(stats storage.SystemHistoryStats) httpTraceBreakdownViewModel {
+	total := stats.AvgDNSMs + stats.AvgConnectMs + stats.AvgTLSMs + stats.AvgTTFBMs
+	if total <= 0 {
+		return httpTraceBreakdownViewModel{}
+	}
+	const svgWidth = 400.0
+	scale := svgWidth / float64(total)
+	dnsW := float64(stats.AvgDNSMs) * scale
+	connW := float64(stats.AvgConnectMs) * scale
+	tlsW := float64(stats.AvgTLSMs) * scale
+	ttfbW := svgWidth - dnsW - connW - tlsW
+	if ttfbW < 0 {
+		ttfbW = 0
+	}
+	connX := dnsW
+	tlsX := connX + connW
+	ttfbX := tlsX + tlsW
+
+	return httpTraceBreakdownViewModel{
+		HasData:   true,
+		DNSMs:     stats.AvgDNSMs,
+		ConnectMs: stats.AvgConnectMs,
+		TLSMs:     stats.AvgTLSMs,
+		TTFBMs:    stats.AvgTTFBMs,
+		TotalMs:   total,
+		DNSX:      "0",
+		DNSW:      fmt.Sprintf("%.2f", dnsW),
+		ConnectX:  fmt.Sprintf("%.2f", connX),
+		ConnectW:  fmt.Sprintf("%.2f", connW),
+		TLSX:      fmt.Sprintf("%.2f", tlsX),
+		TLSW:      fmt.Sprintf("%.2f", tlsW),
+		TTFBX:     fmt.Sprintf("%.2f", ttfbX),
+		TTFBW:     fmt.Sprintf("%.2f", ttfbW),
+	}
 }
 
 type failedCheckViewModel struct {
@@ -207,6 +266,9 @@ func toCardViewModelWithLang(snap monitor.SystemSnapshot, t i18n.Messages) cardV
 		TLSDaysLeft:          tlsDaysLeft,
 		TLSExpiringSoon:      hasTLS && tlsDaysLeft < tlsWarnDays,
 		InMaintenance:        snap.InMaintenance,
+		DependsOn:            snap.DependsOn,
+		BlockedByID:          snap.BlockedByID,
+		BlockedByName:        snap.BlockedByName,
 		JustChanged:          snap.JustChanged,
 	}
 }

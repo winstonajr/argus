@@ -178,6 +178,11 @@ func (c *Config) applyAlertEnvOverrides() {
 			c.Alerts.Cooldown = d
 		}
 	}
+	if repeat := os.Getenv("ARGUS_ALERTS_REPEAT_INTERVAL"); repeat != "" {
+		if d, err := time.ParseDuration(repeat); err == nil {
+			c.Alerts.RepeatInterval = d
+		}
+	}
 	if notifyDeg := os.Getenv("ARGUS_ALERTS_NOTIFY_ON_DEGRADED"); notifyDeg != "" {
 		if b, err := strconv.ParseBool(notifyDeg); err == nil {
 			c.Alerts.NotifyOnDegraded = b
@@ -195,6 +200,36 @@ func (c *Config) applyAlertEnvOverrides() {
 	}
 	if v := os.Getenv("ARGUS_ALERTS_DISCORD_WEBHOOK_URL"); v != "" {
 		c.Alerts.Discord.WebhookURL = v
+	}
+	if v := os.Getenv("ARGUS_ALERTS_TEAMS_WEBHOOK_URL"); v != "" {
+		c.Alerts.Teams.WebhookURL = v
+	}
+	if v := os.Getenv("ARGUS_ALERTS_NTFY_URL"); v != "" {
+		c.Alerts.Ntfy.URL = v
+	}
+	if v := os.Getenv("ARGUS_ALERTS_NTFY_TOPIC"); v != "" {
+		c.Alerts.Ntfy.Topic = v
+	}
+	if v := os.Getenv("ARGUS_ALERTS_NTFY_TOKEN"); v != "" {
+		c.Alerts.Ntfy.Token = v
+	}
+	if v := os.Getenv("ARGUS_ALERTS_WHATSAPP_URL"); v != "" {
+		c.Alerts.WhatsApp.URL = v
+	}
+	if v := os.Getenv("ARGUS_ALERTS_WHATSAPP_TOKEN"); v != "" {
+		c.Alerts.WhatsApp.Token = v
+	}
+	if v := os.Getenv("ARGUS_ALERTS_WHATSAPP_TARGET"); v != "" {
+		c.Alerts.WhatsApp.Target = v
+	}
+	if v := os.Getenv("ARGUS_ALERTS_SLA_REPORT"); v != "" {
+		c.Alerts.SLAReport.Schedule = strings.ToLower(strings.TrimSpace(v))
+	}
+	if v := os.Getenv("ARGUS_ALERTS_SLA_REPORT_DAY"); v != "" {
+		c.Alerts.SLAReport.Day = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("ARGUS_ALERTS_SLA_REPORT_HOUR"); v != "" {
+		c.Alerts.SLAReport.Hour = strings.TrimSpace(v)
 	}
 	if v := os.Getenv("ARGUS_ALERTS_TELEGRAM_BOT_TOKEN"); v != "" {
 		c.Alerts.Telegram.BotToken = v

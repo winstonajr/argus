@@ -10,6 +10,35 @@ import (
 	"argus/internal/checker"
 )
 
+func scanEvent(rows *sql.Rows) (StoredEvent, error) {
+	var ev StoredEvent
+	var occMs int64
+	var occStr string
+	var pubInt int
+	if err := rows.Scan(
+		&ev.ID,
+		&ev.SystemID,
+		&ev.Kind,
+		&ev.FromStatus,
+		&ev.ToStatus,
+		&ev.Diagnosis,
+		&ev.Detail,
+		&ev.Note,
+		&pubInt,
+		&occMs,
+		&occStr,
+	); err != nil {
+		return StoredEvent{}, fmt.Errorf("scan event: %w", err)
+	}
+	ev.PublicNote = pubInt != 0
+	if occMs > 0 {
+		ev.OccurredAt = time.UnixMilli(occMs).UTC()
+	} else {
+		ev.OccurredAt, _ = parseTime(occStr)
+	}
+	return ev, nil
+}
+
 // ListEvents retrieves status change events for a system ordered descending by time.
 func (d *DB) ListEvents(ctx context.Context, sysID string, from, to time.Time, limit int) ([]StoredEvent, error) {
 	if limit <= 0 {
@@ -17,7 +46,8 @@ func (d *DB) ListEvents(ctx context.Context, sysID string, from, to time.Time, l
 	}
 
 	query := `
-SELECT id, system_id, kind, from_status, to_status, COALESCE(diagnosis, ''), COALESCE(detail, ''), occurred_at_ms, occurred_at
+SELECT id, system_id, kind, from_status, to_status, COALESCE(diagnosis, ''), COALESCE(detail, ''),
+       COALESCE(note, ''), COALESCE(public_note, 0), occurred_at_ms, occurred_at
 FROM events
 WHERE system_id = ? AND occurred_at_ms >= ? AND occurred_at_ms <= ?
 ORDER BY occurred_at_ms DESC, id DESC
@@ -31,27 +61,9 @@ LIMIT ?
 
 	var events []StoredEvent
 	for rows.Next() {
-		var ev StoredEvent
-		var occMs int64
-		var occStr string
-		err := rows.Scan(
-			&ev.ID,
-			&ev.SystemID,
-			&ev.Kind,
-			&ev.FromStatus,
-			&ev.ToStatus,
-			&ev.Diagnosis,
-			&ev.Detail,
-			&occMs,
-			&occStr,
-		)
+		ev, err := scanEvent(rows)
 		if err != nil {
-			return nil, fmt.Errorf("scan event: %w", err)
-		}
-		if occMs > 0 {
-			ev.OccurredAt = time.UnixMilli(occMs).UTC()
-		} else {
-			ev.OccurredAt, _ = parseTime(occStr)
+			return nil, err
 		}
 		events = append(events, ev)
 	}
@@ -434,6 +446,28 @@ LIMIT 1 OFFSET ?
 		}
 	}
 
+	var avgDNS, avgConn, avgTLS, avgTTFB sql.NullFloat64
+	if err := d.db.QueryRowContext(ctx, `
+SELECT AVG(dns_ms), AVG(connect_ms), AVG(tls_ms), AVG(ttfb_ms)
+FROM checks
+WHERE system_id = ? AND kind = 'dns' AND ok = 1 AND checked_at_ms >= ? AND checked_at_ms <= ?
+  AND (dns_ms > 0 OR connect_ms > 0 OR tls_ms > 0 OR ttfb_ms > 0)
+`, sysID, fromMs, toMs).Scan(&avgDNS, &avgConn, &avgTLS, &avgTTFB); err != nil && err != sql.ErrNoRows {
+		return stats, fmt.Errorf("query http phase latencies: %w", err)
+	}
+	if avgDNS.Valid {
+		stats.AvgDNSMs = int64(avgDNS.Float64 + 0.5)
+	}
+	if avgConn.Valid {
+		stats.AvgConnectMs = int64(avgConn.Float64 + 0.5)
+	}
+	if avgTLS.Valid {
+		stats.AvgTLSMs = int64(avgTLS.Float64 + 0.5)
+	}
+	if avgTTFB.Valid {
+		stats.AvgTTFBMs = int64(avgTTFB.Float64 + 0.5)
+	}
+
 	if len(events) > 0 {
 		var totalDown time.Duration
 		var resolvedCount int
@@ -490,6 +524,26 @@ LIMIT 1 OFFSET ?
 	return stats, nil
 }
 
+// UpdateEventNote updates the operator note and public visibility flag of an event.
+func (d *DB) UpdateEventNote(ctx context.Context, eventID int64, note string, publicNote bool) error {
+	pubInt := 0
+	if publicNote {
+		pubInt = 1
+	}
+	res, err := d.db.ExecContext(ctx, `UPDATE events SET note = ?, public_note = ? WHERE id = ?`, note, pubInt, eventID)
+	if err != nil {
+		return fmt.Errorf("update event note: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("check event note rows affected: %w", err)
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 // ListAllRecentEvents retrieves the most recent status transition events across all systems.
 func (d *DB) ListAllRecentEvents(ctx context.Context, limit int) ([]StoredEvent, error) {
 	if limit <= 0 {
@@ -497,7 +551,8 @@ func (d *DB) ListAllRecentEvents(ctx context.Context, limit int) ([]StoredEvent,
 	}
 
 	query := `
-SELECT id, system_id, kind, from_status, to_status, COALESCE(diagnosis, ''), COALESCE(detail, ''), occurred_at_ms, occurred_at
+SELECT id, system_id, kind, from_status, to_status, COALESCE(diagnosis, ''), COALESCE(detail, ''),
+       COALESCE(note, ''), COALESCE(public_note, 0), occurred_at_ms, occurred_at
 FROM events
 ORDER BY occurred_at_ms DESC, id DESC
 LIMIT ?
@@ -510,26 +565,9 @@ LIMIT ?
 
 	var events []StoredEvent
 	for rows.Next() {
-		var ev StoredEvent
-		var occMs int64
-		var occStr string
-		if err := rows.Scan(
-			&ev.ID,
-			&ev.SystemID,
-			&ev.Kind,
-			&ev.FromStatus,
-			&ev.ToStatus,
-			&ev.Diagnosis,
-			&ev.Detail,
-			&occMs,
-			&occStr,
-		); err != nil {
-			return nil, fmt.Errorf("scan event: %w", err)
-		}
-		if occMs > 0 {
-			ev.OccurredAt = time.UnixMilli(occMs).UTC()
-		} else {
-			ev.OccurredAt, _ = parseTime(occStr)
+		ev, err := scanEvent(rows)
+		if err != nil {
+			return nil, err
 		}
 		events = append(events, ev)
 	}

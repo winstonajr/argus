@@ -296,3 +296,67 @@ func stringContains(s, substr string) bool {
 	}
 	return false
 }
+
+func TestConfig_DependenciesValidation(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Systems = []SystemConfig{
+		{ID: "fw", URL: "https://fw.local"},
+		{ID: "erp", URL: "https://erp.local", DependsOn: "fw"},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected valid dependency, got %v", err)
+	}
+
+	// Self dependency
+	cfg.Systems[0].DependsOn = "fw"
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected error on self-dependency")
+	}
+
+	// Cycle A -> B -> A
+	cfg.Systems = []SystemConfig{
+		{ID: "a", URL: "https://a.local", DependsOn: "b"},
+		{ID: "b", URL: "https://b.local", DependsOn: "a"},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected error on dependency cycle")
+	}
+
+	// Unknown ID
+	cfg.Systems = []SystemConfig{
+		{ID: "a", URL: "https://a.local", DependsOn: "missing"},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected error on unknown depends_on")
+	}
+}
+
+func TestConfig_MaintenanceWindowAndSLAReport(t *testing.T) {
+	w := MaintenanceWindow{Days: []string{"sun"}, Start: "23:00", End: "01:00"}
+	if err := w.validate(); err != nil {
+		t.Fatalf("expected valid midnight-wrapping window, got %v", err)
+	}
+	// Sunday 23:30 -> inside
+	if !w.Contains(time.Date(2026, 11, 22, 23, 30, 0, 0, time.UTC)) {
+		t.Errorf("expected Sunday 23:30 inside window")
+	}
+	// Monday 00:30 -> inside (wrapped from Sunday)
+	if !w.Contains(time.Date(2026, 11, 23, 0, 30, 0, 0, time.UTC)) {
+		t.Errorf("expected Monday 00:30 inside wrapped window")
+	}
+	// Monday 01:30 -> outside
+	if w.Contains(time.Date(2026, 11, 23, 1, 30, 0, 0, time.UTC)) {
+		t.Errorf("expected Monday 01:30 outside window")
+	}
+
+	cfg := DefaultConfig()
+	cfg.Systems = []SystemConfig{{ID: "s1", URL: "https://s1.local"}}
+	cfg.Alerts.SLAReport = SLAReportConfig{Schedule: "weekly", Day: "mon", Hour: "08:00"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected valid weekly SLA report, got %v", err)
+	}
+	cfg.Alerts.SLAReport = SLAReportConfig{Schedule: "daily"}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected error for invalid sla_report schedule")
+	}
+}
