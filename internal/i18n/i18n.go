@@ -31,6 +31,12 @@ type Messages struct {
 	TestAlertTitle          string
 	TVModeTitle             string
 	ThemeToggleTitle        string
+	ThemeAuto               string
+	ThemeGroupBase          string
+	ThemeGroupStyles        string
+	ThemeDark               string
+	ThemeLight              string
+	ThemeLatte              string
 	ShortcutsTitle          string
 	LangToggleTitle         string
 	StatUp                  string
@@ -149,7 +155,13 @@ var ptBR = Messages{
 	SoundActiveTitle:        "Alerta sonoro (Ativo)",
 	TestAlertTitle:          "Testar envio de alertas",
 	TVModeTitle:             "Modo TV / Sala de Operações",
-	ThemeToggleTitle:        "Alternar tema claro/escuro",
+	ThemeToggleTitle:        "Escolher tema",
+	ThemeAuto:               "Automático",
+	ThemeGroupBase:          "Padrão",
+	ThemeGroupStyles:        "Estilos",
+	ThemeDark:               "Escuro",
+	ThemeLight:              "Claro",
+	ThemeLatte:              "Latte (Quente)",
 	ShortcutsTitle:          "Atalhos de teclado (?)",
 	LangToggleTitle:         "Alternar idioma (PT / EN)",
 	StatUp:                  "Operacionais",
@@ -268,7 +280,13 @@ var enUS = Messages{
 	SoundActiveTitle:        "Sound alert (Active)",
 	TestAlertTitle:          "Send test alert",
 	TVModeTitle:             "TV / NOC Wall Mode",
-	ThemeToggleTitle:        "Toggle light/dark theme",
+	ThemeToggleTitle:        "Choose theme",
+	ThemeAuto:               "Automatic",
+	ThemeGroupBase:          "Default",
+	ThemeGroupStyles:        "Styles",
+	ThemeDark:               "Dark",
+	ThemeLight:              "Light",
+	ThemeLatte:              "Latte (Warm)",
 	ShortcutsTitle:          "Keyboard shortcuts (?)",
 	LangToggleTitle:         "Switch language (PT / EN)",
 	StatUp:                  "Operational",

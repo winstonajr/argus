@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{.T.Lang}}" data-theme="dark">
+<html lang="{{.T.Lang}}" data-theme="dark" data-seasonal-themes="{{if .SeasonalThemes}}true{{else}}false{{end}}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,6 +12,7 @@
   <script src="{{asset "js/init.js"}}"></script>
   <link rel="stylesheet" href="{{asset "css/tokens.css"}}">
   <link rel="stylesheet" href="{{asset "css/app.css"}}">
+  <link rel="stylesheet" href="{{asset "css/seasonal.css"}}">
   <script src="{{asset "js/app.js"}}" defer></script>
 </head>
 <body data-lang="{{.T.Lang}}"
@@ -42,6 +43,7 @@
       <a href="/" class="header__logo">
         <img src="{{asset "favicon.png"}}" alt="Argus" class="header__logo-img" width="26" height="26">
         <span>Argus</span>
+        <span class="seasonal-header-badge" aria-hidden="true"></span>
       </a>
     </div>
 
@@ -125,9 +127,47 @@
         {{if eq .T.Lang "en"}}EN{{else}}PT{{end}}
       </button>
 
-      <button type="button" class="btn-icon" id="theme-toggle-btn" title="{{.T.ThemeToggleTitle}}" aria-label="{{.T.ThemeToggleTitle}}" aria-pressed="false">
-        <svg class="icon" aria-hidden="true"><use href="#icon-moon"></use></svg>
-      </button>
+      <div class="theme-picker" id="theme-picker">
+        <button type="button" class="btn-icon" id="theme-toggle-btn" title="{{.T.ThemeToggleTitle}}" aria-label="{{.T.ThemeToggleTitle}}" aria-expanded="false" aria-haspopup="true">
+          <svg class="icon" aria-hidden="true"><use href="#icon-moon"></use></svg>
+        </button>
+        <div class="theme-menu" id="theme-menu" role="menu" hidden>
+          <button type="button" class="theme-menu__item" data-theme-choice="auto" role="menuitem">
+            <span class="theme-menu__swatch theme-menu__swatch--auto"></span>
+            <span class="theme-menu__label">{{.T.ThemeAuto}}</span>
+          </button>
+          <div class="theme-menu__group">{{.T.ThemeGroupBase}}</div>
+          <button type="button" class="theme-menu__item" data-theme-choice="dark" role="menuitem">
+            <span class="theme-menu__swatch theme-menu__swatch--dark"></span>
+            <span class="theme-menu__label">{{.T.ThemeDark}}</span>
+          </button>
+          <button type="button" class="theme-menu__item" data-theme-choice="light" role="menuitem">
+            <span class="theme-menu__swatch theme-menu__swatch--light"></span>
+            <span class="theme-menu__label">{{.T.ThemeLight}}</span>
+          </button>
+          <div class="theme-menu__group">{{.T.ThemeGroupStyles}}</div>
+          <button type="button" class="theme-menu__item" data-theme-choice="midnight" role="menuitem">
+            <span class="theme-menu__swatch theme-menu__swatch--midnight"></span>
+            <span class="theme-menu__label">Midnight</span>
+          </button>
+          <button type="button" class="theme-menu__item" data-theme-choice="nord" role="menuitem">
+            <span class="theme-menu__swatch theme-menu__swatch--nord"></span>
+            <span class="theme-menu__label">Nord</span>
+          </button>
+          <button type="button" class="theme-menu__item" data-theme-choice="warm" role="menuitem">
+            <span class="theme-menu__swatch theme-menu__swatch--warm"></span>
+            <span class="theme-menu__label">Warm</span>
+          </button>
+          <button type="button" class="theme-menu__item" data-theme-choice="emerald" role="menuitem">
+            <span class="theme-menu__swatch theme-menu__swatch--emerald"></span>
+            <span class="theme-menu__label">Emerald</span>
+          </button>
+          <button type="button" class="theme-menu__item" data-theme-choice="latte" role="menuitem">
+            <span class="theme-menu__swatch theme-menu__swatch--latte"></span>
+            <span class="theme-menu__label">{{.T.ThemeLatte}}</span>
+          </button>
+        </div>
+      </div>
     </div>
   </header>
 

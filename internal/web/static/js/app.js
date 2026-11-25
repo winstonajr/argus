@@ -23,11 +23,18 @@
   }
 
   // 2. Theme, TV Mode, View Mode & Language
+  function getSavedThemeChoice() {
+    try {
+      return localStorage.getItem('argus-theme') || 'auto';
+    } catch (_) {
+      return 'auto';
+    }
+  }
+
   function syncThemeUI(theme) {
-    const isLight = theme === 'light';
+    const isLight = theme === 'light' || theme === 'latte';
     const btn = document.getElementById('theme-toggle-btn');
     if (btn) {
-      btn.setAttribute('aria-pressed', isLight ? 'true' : 'false');
       const useEl = btn.querySelector('use');
       if (useEl) {
         useEl.setAttribute('href', isLight ? '#icon-sun' : '#icon-moon');
@@ -35,18 +42,142 @@
     }
     const metaTheme = document.querySelector('meta[name="theme-color"]');
     if (metaTheme) {
-      metaTheme.setAttribute('content', isLight ? '#F6F7F9' : '#0E1013');
+      const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+      metaTheme.setAttribute('content', bg || (isLight ? '#F6F7F9' : '#0E1013'));
     }
+    const choice = getSavedThemeChoice();
+    document.querySelectorAll('.theme-menu__item[data-theme-choice]').forEach(function(item) {
+      item.classList.toggle('active', item.getAttribute('data-theme-choice') === choice);
+    });
   }
+
+  function applyThemeChoice(choice) {
+    const resolved = window.__argusResolveTheme ? window.__argusResolveTheme(choice) : (choice === 'auto' ? 'dark' : choice);
+    try {
+      if (choice === 'auto') {
+        localStorage.removeItem('argus-theme');
+      } else {
+        localStorage.setItem('argus-theme', choice);
+      }
+    } catch (_) {}
+    document.documentElement.setAttribute('data-theme', resolved);
+    syncThemeUI(resolved);
+    renderSeasonalParticles(resolved);
+  }
+
+  const SEASONAL_PARTICLES = {
+    halloween: { icons: ['bat.svg', 'ghost.svg'], colors: ['#A855F7', '#F97316'], anim: 'seasonal-fall', sway: true, count: 14, durMin: 14, durMax: 24 },
+    christmas: { icons: ['snowflake.svg'], colors: ['#A7F3D0', '#ECF5F0'], anim: 'seasonal-fall', sway: true, count: 18, durMin: 11, durMax: 22 },
+    easter: { icons: ['egg.svg', 'flower.svg'], colors: ['#C084FC', '#5EEAD4', '#FDE047'], anim: 'seasonal-fall', sway: true, count: 12, durMin: 14, durMax: 24 },
+    carnival: { icons: ['confetti.svg', 'mask.svg'], colors: ['#FACC15', '#2DD4BF', '#F43F5E', '#A855F7'], anim: 'seasonal-fall', sway: true, count: 18, durMin: 9, durMax: 17 },
+    junina: { icons: ['lantern.svg', 'stars.svg'], colors: ['#FB923C', '#FACC15'], anim: 'seasonal-rise', sway: true, count: 14, durMin: 12, durMax: 21 },
+    brazil: { icons: ['stars.svg'], colors: ['#FACC15', '#22C55E', '#38BDF8'], anim: 'seasonal-twinkle', sway: false, count: 15, durMin: 3, durMax: 6 },
+    spring: { icons: ['flower.svg', 'leaf.svg'], colors: ['#F472B6', '#FACC15', '#34D399'], anim: 'seasonal-fall', sway: true, count: 15, durMin: 12, durMax: 21 },
+    newyear: { icons: ['sparkles.svg', 'stars.svg'], colors: ['#EAB308', '#34D399', '#F8FAFC'], anim: 'seasonal-rise', sway: true, count: 16, durMin: 10, durMax: 18 }
+  };
+
+  function renderSeasonalParticles(theme) {
+    const existing = document.getElementById('seasonal-particles');
+    if (existing) existing.remove();
+    const spec = SEASONAL_PARTICLES[theme];
+    if (!spec || !document.body) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    const container = document.createElement('div');
+    container.id = 'seasonal-particles';
+    container.className = 'seasonal-particles' + (document.hidden ? ' is-paused' : '');
+    container.setAttribute('aria-hidden', 'true');
+
+    for (let i = 0; i < spec.count; i++) {
+      const el = document.createElement('span');
+      el.className = 'seasonal-particle';
+      const inner = document.createElement('span');
+      inner.className = 'seasonal-particle__inner';
+
+      const icon = spec.icons[i % spec.icons.length];
+      const color = spec.colors[i % spec.colors.length];
+      const depth = i % 2 === 0 ? 0.78 : 1.15;
+      const size = Math.round((13 + ((i * 7) % 10)) * depth);
+      const left = (i * (100 / spec.count) + ((i * 13) % 7)) % 98;
+      const dur = (spec.durMin + ((i * 1.7) % (spec.durMax - spec.durMin))) / (depth > 1 ? 1.08 : 0.92);
+      const delay = -((i * 2.3) % dur);
+      const drift = ((i % 2 === 0 ? 1 : -1) * (18 + ((i * 9) % 30))) + 'px';
+      const swayAmp = (8 + ((i * 5) % 14)) + 'px';
+      const rot = (14 + ((i * 19) % 28)) + 'deg';
+      const swayDur = (3.2 + (i % 4) * 0.9).toFixed(1) + 's';
+
+      el.style.left = left.toFixed(1) + '%';
+      if (spec.anim === 'seasonal-twinkle') {
+        el.style.top = (8 + ((i * 17) % 82)) + '%';
+      }
+      el.style.width = size + 'px';
+      el.style.height = size + 'px';
+      el.style.setProperty('--p-opacity', (depth > 1 ? 0.22 : 0.13).toFixed(2));
+      el.style.setProperty('--p-drift', drift);
+      el.style.animation = spec.anim + ' ' + dur.toFixed(1) + 's linear ' + delay.toFixed(1) + 's infinite';
+
+      inner.style.backgroundColor = color;
+      inner.style.webkitMaskImage = "url('/static/seasonal/" + icon + "')";
+      inner.style.maskImage = "url('/static/seasonal/" + icon + "')";
+      if (spec.sway) {
+        inner.style.setProperty('--p-sway', swayAmp);
+        inner.style.setProperty('--p-rot', rot);
+        inner.style.animation = 'seasonal-sway ' + swayDur + ' ease-in-out ' + (-i * 0.6).toFixed(1) + 's infinite';
+      }
+
+      el.appendChild(inner);
+      container.appendChild(el);
+    }
+    document.body.prepend(container);
+  }
+
+  document.addEventListener('visibilitychange', function() {
+    const p = document.getElementById('seasonal-particles');
+    if (p) p.classList.toggle('is-paused', document.hidden);
+  });
 
   function toggleTheme() {
     const current = document.documentElement.getAttribute('data-theme') || 'dark';
-    const next = current === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', next);
-    syncThemeUI(next);
-    try {
-      localStorage.setItem('argus-theme', next);
-    } catch (_) {}
+    const next = current === 'light' ? 'dark' : 'light';
+    applyThemeChoice(next);
+  }
+
+  function initThemePicker() {
+    const picker = document.getElementById('theme-picker');
+    const btn = document.getElementById('theme-toggle-btn');
+    const menu = document.getElementById('theme-menu');
+    if (!picker || !btn || !menu) return;
+
+    function closeMenu() {
+      menu.hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+    }
+
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      const willOpen = menu.hidden;
+      menu.hidden = !willOpen;
+      btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    });
+
+    menu.addEventListener('click', function(e) {
+      const item = e.target.closest('.theme-menu__item[data-theme-choice]');
+      if (!item) return;
+      applyThemeChoice(item.getAttribute('data-theme-choice'));
+      closeMenu();
+    });
+
+    document.addEventListener('click', function(e) {
+      if (!menu.hidden && !picker.contains(e.target)) {
+        closeMenu();
+      }
+    });
+
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && !menu.hidden) {
+        closeMenu();
+      }
+    });
   }
 
   function initTVMode() {
@@ -400,69 +531,14 @@
     stage: null
   };
 
-  function createReindeerMarkup(x, y, isRudolph) {
-    const nose = isRudolph
-      ? '<circle cx="56" cy="14" r="4.2" fill="#EF4444" fill-opacity="0.35"/><circle cx="56" cy="14" r="2.4" fill="#EF4444"/>'
-      : '<circle cx="55.5" cy="14" r="1.8" fill="#451A03"/>';
-    return (
-      '<g transform="translate(' + x + ', ' + y + ')">' +
-        '<ellipse cx="26" cy="26" rx="14" ry="8" fill="#92400E"/>' +
-        '<path d="M18 32 L15 44 M23 33 L22 44 M32 32 L34 44 M37 31 L41 43" stroke="#78350F" stroke-width="2.5" stroke-linecap="round"/>' +
-        '<path d="M12 24 L8 20" stroke="#78350F" stroke-width="2.5" stroke-linecap="round"/>' +
-        '<path d="M35 22 L42 12 L48 14" stroke="#92400E" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>' +
-        '<circle cx="46" cy="13" r="6" fill="#92400E"/>' +
-        '<ellipse cx="52" cy="14" rx="4" ry="3" fill="#B45309"/>' +
-        nose +
-        '<circle cx="47" cy="11.5" r="1" fill="#1E293B"/>' +
-        '<path d="M43 8 L40 2 M40 5 L37 4 M45 8 L47 2 M47 5 L50 4" stroke="#D97706" stroke-width="1.6" stroke-linecap="round"/>' +
-        '<path d="M35 21 L42 23" stroke="#DC2626" stroke-width="2.5" stroke-linecap="round"/>' +
-        '<circle cx="38.5" cy="23" r="1.5" fill="#FDE047"/>' +
-      '</g>'
-    );
-  }
-
   function createSantaSleighMarkup() {
-    const reindeerCount = 9;
-    let reindeerMarkup = '';
-    for (let i = 0; i < reindeerCount; i++) {
-      const x = 128 + i * 33;
-      const y = i % 2 === 0 ? 18 : 15;
-      reindeerMarkup += createReindeerMarkup(x, y, i === reindeerCount - 1);
-    }
-
     return (
       '<div class="santa-sleigh-runner">' +
-        '<svg class="santa-sleigh-svg" viewBox="0 0 460 74" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
-          '<g opacity="0.9">' +
-            '<circle cx="14" cy="46" r="2" fill="#FDE047"/>' +
-            '<circle cx="6" cy="52" r="1.5" fill="#FFFFFF"/>' +
-            '<circle cx="22" cy="54" r="1.5" fill="#FDE047"/>' +
-          '</g>' +
-          '<path d="M108 42 Q260 36 426 40" stroke="#FBBF24" stroke-width="1.5" stroke-dasharray="3 2"/>' +
-          '<path d="M26 58 Q58 64 98 56 C106 54 110 48 106 44" stroke="#FBBF24" stroke-width="3" stroke-linecap="round"/>' +
-          '<path d="M36 58 L38 50 M88 57 L90 49" stroke="#FBBF24" stroke-width="2.5" stroke-linecap="round"/>' +
-          '<path d="M30 36 C30 48 40 52 54 52 L92 52 C102 52 108 46 108 38 L94 38 C90 44 82 44 76 38 L52 38 C46 38 42 32 34 32 Z" fill="#DC2626" stroke="#991B1B" stroke-width="1.5"/>' +
-          '<path d="M32 36 L108 38" stroke="#FBBF24" stroke-width="2" stroke-linecap="round"/>' +
-          '<rect x="38" y="25" width="14" height="12" rx="2" fill="#16A34A"/>' +
-          '<path d="M45 25 V37 M38 31 H52" stroke="#FDE047" stroke-width="2"/>' +
-          '<rect x="50" y="29" width="11" height="9" rx="1.5" fill="#2563EB"/>' +
-          '<path d="M55.5 29 V38 M50 33.5 H61" stroke="#FFFFFF" stroke-width="1.5"/>' +
-          '<circle cx="72" cy="24" r="7" fill="#FCA5A5"/>' +
-          '<path d="M64 34 C64 27 80 27 80 34 L82 42 L62 42 Z" fill="#DC2626"/>' +
-          '<path d="M65 36 H79" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>' +
-          '<path d="M65 25 C65 32 79 32 79 25 C77 29 67 29 65 25 Z" fill="#FFFFFF"/>' +
-          '<circle cx="72" cy="28" r="4" fill="#FFFFFF"/>' +
-          '<path d="M65 20 C67 11 77 11 80 19 Z" fill="#DC2626"/>' +
-          '<rect x="64" y="18" width="16" height="3.5" rx="1.75" fill="#FFFFFF"/>' +
-          '<circle cx="81" cy="19" r="2.5" fill="#FFFFFF"/>' +
-          '<circle cx="70" cy="23" r="1" fill="#1E293B"/>' +
-          '<circle cx="74" cy="23" r="1" fill="#1E293B"/>' +
-          reindeerMarkup +
-          '<g transform="translate(88, 2)">' +
-            '<rect x="0" y="0" width="54" height="16" rx="8" fill="#0F172A" fill-opacity="0.82" stroke="#F87171" stroke-width="1"/>' +
-            '<text x="27" y="11" text-anchor="middle" fill="#FFFFFF" font-family="monospace" font-size="8" font-weight="bold">HO HO HO!</text>' +
-          '</g>' +
-        '</svg>' +
+        '<div class="santa-sleigh-bob">' +
+          '<span class="santa-sleigh-trail" aria-hidden="true"></span>' +
+          '<span class="santa-sleigh-bubble mono">HO HO HO!</span>' +
+          '<img class="santa-sleigh-img" src="/static/seasonal/santa-sleigh.svg" alt="" aria-hidden="true">' +
+        '</div>' +
       '</div>'
     );
   }
@@ -496,19 +572,38 @@
     santaState.resizeHandler = resize;
     window.addEventListener('resize', resize);
 
+    const flakeImg = new Image();
+    flakeImg.src = '/static/seasonal/snowflake.svg';
+
     const flakes = [];
-    const flakeCount = 75;
+    const flakeCount = 55;
     for (let i = 0; i < flakeCount; i++) {
       flakes.push({
         x: Math.random() * canvas.width,
         y: Math.random() * canvas.height,
-        r: 1.2 + Math.random() * 2.8,
-        speedY: 0.7 + Math.random() * 1.4,
+        size: 10 + Math.random() * 12,
+        speedY: 0.7 + Math.random() * 1.3,
         swayAmp: 0.3 + Math.random() * 0.7,
         swaySpeed: 0.01 + Math.random() * 0.02,
         phase: Math.random() * Math.PI * 2,
-        opacity: 0.35 + Math.random() * 0.55
+        rot: Math.random() * Math.PI * 2,
+        rotSpeed: (Math.random() - 0.5) * 0.02,
+        opacity: 0.35 + Math.random() * 0.5
       });
+    }
+
+    function drawFallbackFlake(x, y, r, opacity) {
+      ctx.strokeStyle = 'rgba(255, 255, 255, ' + opacity.toFixed(2) + ')';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      for (let a = 0; a < 3; a++) {
+        const ang = (a * Math.PI) / 3;
+        const dx = Math.cos(ang) * r;
+        const dy = Math.sin(ang) * r;
+        ctx.moveTo(x - dx, y - dy);
+        ctx.lineTo(x + dx, y + dy);
+      }
+      ctx.stroke();
     }
 
     function tick() {
@@ -518,20 +613,28 @@
       for (let i = 0; i < flakes.length; i++) {
         const f = flakes[i];
         f.phase += f.swaySpeed;
+        f.rot += f.rotSpeed;
         f.y += f.speedY;
         f.x += Math.sin(f.phase) * f.swayAmp;
 
-        if (f.y > canvas.height + 6) {
-          f.y = -6;
+        if (f.y > canvas.height + 16) {
+          f.y = -16;
           f.x = Math.random() * canvas.width;
         }
-        if (f.x > canvas.width + 6) f.x = -6;
-        if (f.x < -6) f.x = canvas.width + 6;
+        if (f.x > canvas.width + 16) f.x = -16;
+        if (f.x < -16) f.x = canvas.width + 16;
 
-        ctx.beginPath();
-        ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(255, 255, 255, ' + f.opacity.toFixed(2) + ')';
-        ctx.fill();
+        if (flakeImg.complete && flakeImg.naturalWidth > 0) {
+          ctx.save();
+          ctx.globalAlpha = f.opacity;
+          ctx.translate(f.x, f.y);
+          ctx.rotate(f.rot);
+          ctx.filter = 'invert(1)';
+          ctx.drawImage(flakeImg, -f.size / 2, -f.size / 2, f.size, f.size);
+          ctx.restore();
+        } else {
+          drawFallbackFlake(f.x, f.y, f.size * 0.45, f.opacity);
+        }
       }
 
       santaState.rafId = window.requestAnimationFrame(tick);
@@ -1306,7 +1409,9 @@
   }
 
   window.addEventListener('DOMContentLoaded', function() {
-    syncThemeUI(document.documentElement.getAttribute('data-theme') || 'dark');
+    const initialTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+    syncThemeUI(initialTheme);
+    renderSeasonalParticles(initialTheme);
     initAutoHideScrollbar();
     initTVMode();
     initViewMode();
@@ -1323,8 +1428,7 @@
     initSSE();
     setInterval(checkStaleCards, 10000);
 
-    const themeBtn = document.getElementById('theme-toggle-btn');
-    if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
+    initThemePicker();
 
     const sortBtn = document.getElementById('sort-toggle-btn');
     if (sortBtn) sortBtn.addEventListener('click', toggleSortMode);

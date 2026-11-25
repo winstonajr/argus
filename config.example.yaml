@@ -3,6 +3,7 @@ server:
   lang: "pt-BR" # "pt-BR" ou "en" (também configurável via ARGUS_LANG)
   timezone: "America/Sao_Paulo" # Fuso horário IANA (ex: "America/Sao_Paulo", "UTC"; também via ARGUS_TIMEZONE ou TZ)
   santa_easter_egg: true # Easter egg de Natal quando todos os sistemas caírem (ARGUS_SANTA_EASTER_EGG)
+  seasonal_themes: true # Ativa temas sazonais automáticos nas datas comemorativas (ARGUS_SEASONAL_THEMES)
   # auth:
   #   username: "${ARGUS_SERVER_AUTH_USERNAME:-admin}"
   #   password: "${ARGUS_SERVER_AUTH_PASSWORD:-}"

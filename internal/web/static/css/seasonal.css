@@ -1,0 +1,736 @@
+/* ==========================================================================
+   Argus Seasonal Design System
+   Cohesive Header/TV Badges, Top Ornaments, Integrated Card Watermarks & Motion
+   ========================================================================== */
+
+.seasonal-header-badge,
+.seasonal-tv-badge {
+  display: none;
+}
+
+/* Layering so ambient background & particles never block UI or eat clicks */
+html[data-theme="halloween"] body,
+html[data-theme="christmas"] body,
+html[data-theme="easter"] body,
+html[data-theme="carnival"] body,
+html[data-theme="junina"] body,
+html[data-theme="brazil"] body,
+html[data-theme="spring"] body,
+html[data-theme="newyear"] body {
+  position: relative;
+}
+
+html[data-theme="halloween"] .main-container,
+html[data-theme="christmas"] .main-container,
+html[data-theme="easter"] .main-container,
+html[data-theme="carnival"] .main-container,
+html[data-theme="junina"] .main-container,
+html[data-theme="brazil"] .main-container,
+html[data-theme="spring"] .main-container,
+html[data-theme="newyear"] .main-container,
+html[data-theme="halloween"] .stats-bar,
+html[data-theme="christmas"] .stats-bar,
+html[data-theme="easter"] .stats-bar,
+html[data-theme="carnival"] .stats-bar,
+html[data-theme="junina"] .stats-bar,
+html[data-theme="brazil"] .stats-bar,
+html[data-theme="spring"] .stats-bar,
+html[data-theme="newyear"] .stats-bar {
+  position: relative;
+  z-index: 2;
+}
+
+html[data-theme="halloween"] .header,
+html[data-theme="christmas"] .header,
+html[data-theme="easter"] .header,
+html[data-theme="carnival"] .header,
+html[data-theme="junina"] .header,
+html[data-theme="brazil"] .header,
+html[data-theme="spring"] .header,
+html[data-theme="newyear"] .header {
+  z-index: 100;
+}
+
+/* ==========================================================================
+   1. Header & TV Mode Seasonal Badges
+   ========================================================================== */
+html[data-theme="halloween"] .seasonal-header-badge,
+html[data-theme="christmas"] .seasonal-header-badge,
+html[data-theme="easter"] .seasonal-header-badge,
+html[data-theme="carnival"] .seasonal-header-badge,
+html[data-theme="junina"] .seasonal-header-badge,
+html[data-theme="brazil"] .seasonal-header-badge,
+html[data-theme="spring"] .seasonal-header-badge,
+html[data-theme="newyear"] .seasonal-header-badge,
+html.tv-mode[data-theme="halloween"] .seasonal-tv-badge,
+html.tv-mode[data-theme="christmas"] .seasonal-tv-badge,
+html.tv-mode[data-theme="easter"] .seasonal-tv-badge,
+html.tv-mode[data-theme="carnival"] .seasonal-tv-badge,
+html.tv-mode[data-theme="junina"] .seasonal-tv-badge,
+html.tv-mode[data-theme="brazil"] .seasonal-tv-badge,
+html.tv-mode[data-theme="spring"] .seasonal-tv-badge,
+html.tv-mode[data-theme="newyear"] .seasonal-tv-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px 0 7px;
+  margin-left: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.seasonal-header-badge::before,
+.seasonal-tv-badge::before {
+  content: "";
+  width: 13px;
+  height: 13px;
+  background-color: currentColor;
+  -webkit-mask-image: var(--seasonal-primary-icon);
+  mask-image: var(--seasonal-primary-icon);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  mask-position: center;
+  flex-shrink: 0;
+}
+
+.seasonal-header-badge::after,
+.seasonal-tv-badge::after {
+  content: var(--seasonal-badge-pt);
+}
+
+html[lang="en"] .seasonal-header-badge::after,
+html[lang="en"] .seasonal-tv-badge::after {
+  content: var(--seasonal-badge-en);
+}
+
+/* ==========================================================================
+   2. Integrated Cropped Watermarks (Home Cards, TV Tiles & History Banners)
+   ========================================================================== */
+html[data-theme="halloween"] .card,
+html[data-theme="christmas"] .card,
+html[data-theme="easter"] .card,
+html[data-theme="carnival"] .card,
+html[data-theme="junina"] .card,
+html[data-theme="brazil"] .card,
+html[data-theme="spring"] .card,
+html[data-theme="newyear"] .card,
+html[data-theme="halloween"] .history-status-banner,
+html[data-theme="christmas"] .history-status-banner,
+html[data-theme="easter"] .history-status-banner,
+html[data-theme="carnival"] .history-status-banner,
+html[data-theme="junina"] .history-status-banner,
+html[data-theme="brazil"] .history-status-banner,
+html[data-theme="spring"] .history-status-banner,
+html[data-theme="newyear"] .history-status-banner {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-theme="halloween"] .card > *,
+html[data-theme="christmas"] .card > *,
+html[data-theme="easter"] .card > *,
+html[data-theme="carnival"] .card > *,
+html[data-theme="junina"] .card > *,
+html[data-theme="brazil"] .card > *,
+html[data-theme="spring"] .card > *,
+html[data-theme="newyear"] .card > *,
+html[data-theme="halloween"] .history-status-banner > *,
+html[data-theme="christmas"] .history-status-banner > *,
+html[data-theme="easter"] .history-status-banner > *,
+html[data-theme="carnival"] .history-status-banner > *,
+html[data-theme="junina"] .history-status-banner > *,
+html[data-theme="brazil"] .history-status-banner > *,
+html[data-theme="spring"] .history-status-banner > *,
+html[data-theme="newyear"] .history-status-banner > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Home Card Watermark — tinted with the card's own semantic color */
+html[data-theme="halloween"] .card::after,
+html[data-theme="christmas"] .card::after,
+html[data-theme="easter"] .card::after,
+html[data-theme="carnival"] .card::after,
+html[data-theme="junina"] .card::after,
+html[data-theme="brazil"] .card::after,
+html[data-theme="spring"] .card::after,
+html[data-theme="newyear"] .card::after {
+  content: "";
+  position: absolute;
+  right: -8px;
+  bottom: -8px;
+  width: 68px;
+  height: 68px;
+  transform: rotate(-10deg);
+  pointer-events: none;
+  z-index: 0;
+  background-color: var(--accent);
+  opacity: 0.11;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  mask-position: center;
+  transition: transform 240ms var(--ease-out), opacity 240ms var(--ease-out);
+}
+
+html[data-theme="halloween"] .card--up::after,
+html[data-theme="christmas"] .card--up::after,
+html[data-theme="easter"] .card--up::after,
+html[data-theme="carnival"] .card--up::after,
+html[data-theme="junina"] .card--up::after,
+html[data-theme="brazil"] .card--up::after,
+html[data-theme="spring"] .card--up::after,
+html[data-theme="newyear"] .card--up::after {
+  background-color: var(--status-up);
+  opacity: 0.11;
+}
+
+html[data-theme="halloween"] .card--degraded::after,
+html[data-theme="christmas"] .card--degraded::after,
+html[data-theme="easter"] .card--degraded::after,
+html[data-theme="carnival"] .card--degraded::after,
+html[data-theme="junina"] .card--degraded::after,
+html[data-theme="brazil"] .card--degraded::after,
+html[data-theme="spring"] .card--degraded::after,
+html[data-theme="newyear"] .card--degraded::after {
+  background-color: var(--status-degraded);
+  opacity: 0.14;
+}
+
+html[data-theme="halloween"] .card--down::after,
+html[data-theme="christmas"] .card--down::after,
+html[data-theme="easter"] .card--down::after,
+html[data-theme="carnival"] .card--down::after,
+html[data-theme="junina"] .card--down::after,
+html[data-theme="brazil"] .card--down::after,
+html[data-theme="spring"] .card--down::after,
+html[data-theme="newyear"] .card--down::after {
+  background-color: var(--status-down);
+  opacity: 0.16;
+}
+
+html[data-theme="halloween"] .card:hover::after,
+html[data-theme="christmas"] .card:hover::after,
+html[data-theme="easter"] .card:hover::after,
+html[data-theme="carnival"] .card:hover::after,
+html[data-theme="junina"] .card:hover::after,
+html[data-theme="brazil"] .card:hover::after,
+html[data-theme="spring"] .card:hover::after,
+html[data-theme="newyear"] .card:hover::after {
+  opacity: 0.22;
+  transform: rotate(-5deg) scale(1.06);
+}
+
+/* Compact List View adjustment */
+html.view-compact .cards-grid .card::after {
+  width: 30px;
+  height: 30px;
+  right: 8px;
+  bottom: 4px;
+  opacity: 0.09;
+}
+
+/* TV Mode Tile Watermark — placed in the clear middle-right zone above DNS/IP pills */
+html.tv-mode[data-theme="halloween"] .card::after,
+html.tv-mode[data-theme="christmas"] .card::after,
+html.tv-mode[data-theme="easter"] .card::after,
+html.tv-mode[data-theme="carnival"] .card::after,
+html.tv-mode[data-theme="junina"] .card::after,
+html.tv-mode[data-theme="brazil"] .card::after,
+html.tv-mode[data-theme="spring"] .card::after,
+html.tv-mode[data-theme="newyear"] .card::after {
+  right: -6px;
+  bottom: 24px;
+  width: 50px;
+  height: 50px;
+  background-color: #ffffff;
+  opacity: 0.14;
+}
+
+/* History Page Banner Watermark */
+html[data-theme="halloween"] .history-status-banner::after,
+html[data-theme="christmas"] .history-status-banner::after,
+html[data-theme="easter"] .history-status-banner::after,
+html[data-theme="carnival"] .history-status-banner::after,
+html[data-theme="junina"] .history-status-banner::after,
+html[data-theme="brazil"] .history-status-banner::after,
+html[data-theme="spring"] .history-status-banner::after,
+html[data-theme="newyear"] .history-status-banner::after {
+  content: "";
+  position: absolute;
+  right: 10px;
+  bottom: -10px;
+  width: 54px;
+  height: 54px;
+  transform: rotate(-10deg);
+  pointer-events: none;
+  z-index: 0;
+  background-color: currentColor;
+  opacity: 0.14;
+  -webkit-mask-image: var(--seasonal-primary-icon);
+  mask-image: var(--seasonal-primary-icon);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+/* ==========================================================================
+   3. Ambient Motion & Particle System (Home + TV Mode + Secondary Pages)
+   ========================================================================== */
+.seasonal-particles {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.seasonal-particles.is-paused .seasonal-particle,
+.seasonal-particles.is-paused .seasonal-particle__inner {
+  animation-play-state: paused !important;
+}
+
+.seasonal-particle {
+  position: absolute;
+  top: -40px;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.seasonal-particle__inner {
+  display: block;
+  width: 100%;
+  height: 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  mask-position: center;
+  will-change: transform;
+}
+
+@keyframes seasonal-fall {
+  0% {
+    transform: translate3d(0, -40px, 0);
+    opacity: 0;
+  }
+  10% {
+    opacity: var(--p-opacity, 0.20);
+  }
+  90% {
+    opacity: var(--p-opacity, 0.20);
+  }
+  100% {
+    transform: translate3d(var(--p-drift, 32px), 108vh, 0);
+    opacity: 0;
+  }
+}
+
+@keyframes seasonal-rise {
+  0% {
+    transform: translate3d(0, 106vh, 0) scale(0.8);
+    opacity: 0;
+  }
+  15% {
+    opacity: var(--p-opacity, 0.24);
+  }
+  85% {
+    opacity: var(--p-opacity, 0.22);
+  }
+  100% {
+    transform: translate3d(var(--p-drift, 24px), -36px, 0) scale(1.1);
+    opacity: 0;
+  }
+}
+
+@keyframes seasonal-sway {
+  0%, 100% {
+    transform: translateX(calc(var(--p-sway, 12px) * -1)) rotate(calc(var(--p-rot, 20deg) * -1));
+  }
+  50% {
+    transform: translateX(var(--p-sway, 12px)) rotate(var(--p-rot, 20deg));
+  }
+}
+
+@keyframes seasonal-twinkle {
+  0%, 100% {
+    transform: scale(0.82) rotate(0deg);
+    opacity: 0.08;
+  }
+  50% {
+    transform: scale(1.14) rotate(14deg);
+    opacity: var(--p-opacity, 0.28);
+  }
+}
+
+@keyframes seasonal-ambient-pulse {
+  0%, 100% { opacity: 0.82; }
+  50% { opacity: 1; }
+}
+
+@keyframes seasonal-lights-glow {
+  0%, 100% { filter: brightness(0.92); }
+  50% { filter: brightness(1.25); }
+}
+
+@keyframes seasonal-bunting-sway {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(1.5px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seasonal-particles { display: none; }
+}
+
+/* ==========================================================================
+   4. Per-Season Palettes, Top Ornaments & Icon Variations
+   ========================================================================== */
+
+/* --- HALLOWEEN --- */
+html[data-theme="halloween"] {
+  --seasonal-primary-icon: url('/static/seasonal/pumpkin.svg');
+  --seasonal-badge-pt: "Halloween";
+  --seasonal-badge-en: "Halloween";
+}
+
+html[data-theme="halloween"] .header,
+html.tv-mode[data-theme="halloween"] .stats-bar {
+  border-bottom-color: color-mix(in srgb, #F97316 35%, var(--border));
+}
+
+html[data-theme="halloween"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(640px 400px at 88% 10%, rgba(168, 85, 247, 0.16), transparent 70%),
+    radial-gradient(720px 360px at 14% 94%, rgba(249, 115, 22, 0.13), transparent 70%);
+  animation: seasonal-ambient-pulse 7s ease-in-out infinite;
+}
+
+html[data-theme="halloween"] body::after {
+  content: "";
+  position: fixed;
+  top: 56px;
+  left: 0;
+  width: 110px;
+  height: 110px;
+  pointer-events: none;
+  z-index: 1;
+  background-color: rgba(184, 169, 206, 0.20);
+  -webkit-mask-image: url('/static/seasonal/web.svg');
+  mask-image: url('/static/seasonal/web.svg');
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+html.tv-mode[data-theme="halloween"] body::after {
+  top: 34px;
+  width: 84px;
+  height: 84px;
+}
+
+html[data-theme="halloween"] .card:nth-child(4n+1)::after {
+  -webkit-mask-image: url('/static/seasonal/pumpkin.svg');
+  mask-image: url('/static/seasonal/pumpkin.svg');
+}
+html[data-theme="halloween"] .card:nth-child(4n+2)::after {
+  -webkit-mask-image: url('/static/seasonal/ghost.svg');
+  mask-image: url('/static/seasonal/ghost.svg');
+}
+html[data-theme="halloween"] .card:nth-child(4n+3)::after {
+  -webkit-mask-image: url('/static/seasonal/vampire.svg');
+  mask-image: url('/static/seasonal/vampire.svg');
+}
+html[data-theme="halloween"] .card:nth-child(4n+4)::after {
+  -webkit-mask-image: url('/static/seasonal/zombie.svg');
+  mask-image: url('/static/seasonal/zombie.svg');
+}
+
+/* --- CHRISTMAS --- */
+html[data-theme="christmas"] {
+  --seasonal-primary-icon: url('/static/seasonal/pine.svg');
+  --seasonal-badge-pt: "Natal";
+  --seasonal-badge-en: "Christmas";
+}
+
+html[data-theme="christmas"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(680px 380px at 18% 10%, rgba(34, 197, 94, 0.14), transparent 70%),
+    radial-gradient(620px 360px at 84% 16%, rgba(225, 29, 72, 0.12), transparent 70%);
+  animation: seasonal-ambient-pulse 8s ease-in-out infinite;
+}
+
+/* Subtle Christmas string lights along top bar */
+html[data-theme="christmas"] body::after {
+  content: "";
+  position: fixed;
+  top: 56px;
+  left: 0;
+  right: 0;
+  height: 12px;
+  pointer-events: none;
+  z-index: 90;
+  opacity: 0.85;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='12' viewBox='0 0 96 12'%3E%3Cpath d='M0 2 Q24 6 48 2 T96 2' stroke='%232B4B3D' stroke-width='1' fill='none'/%3E%3Ccircle cx='12' cy='4.5' r='2.4' fill='%23EF4444'/%3E%3Ccircle cx='36' cy='4.5' r='2.4' fill='%23FACC15'/%3E%3Ccircle cx='60' cy='3.5' r='2.4' fill='%2322C55E'/%3E%3Ccircle cx='84' cy='3.5' r='2.4' fill='%2338BDF8'/%3E%3C/svg%3E");
+  background-repeat: repeat-x;
+  animation: seasonal-lights-glow 3.2s ease-in-out infinite;
+}
+
+html.tv-mode[data-theme="christmas"] body::after {
+  top: 33px;
+}
+
+html[data-theme="christmas"] .card:nth-child(4n+1)::after {
+  -webkit-mask-image: url('/static/seasonal/pine.svg');
+  mask-image: url('/static/seasonal/pine.svg');
+}
+html[data-theme="christmas"] .card:nth-child(4n+2)::after {
+  -webkit-mask-image: url('/static/seasonal/gift.svg');
+  mask-image: url('/static/seasonal/gift.svg');
+}
+html[data-theme="christmas"] .card:nth-child(4n+3)::after {
+  -webkit-mask-image: url('/static/seasonal/snowflake.svg');
+  mask-image: url('/static/seasonal/snowflake.svg');
+}
+html[data-theme="christmas"] .card:nth-child(4n+4)::after {
+  -webkit-mask-image: url('/static/seasonal/bell.svg');
+  mask-image: url('/static/seasonal/bell.svg');
+}
+
+/* --- EASTER --- */
+html[data-theme="easter"] {
+  --seasonal-primary-icon: url('/static/seasonal/egg.svg');
+  --seasonal-badge-pt: "Páscoa";
+  --seasonal-badge-en: "Easter";
+}
+
+html[data-theme="easter"] .header,
+html.tv-mode[data-theme="easter"] .stats-bar {
+  border-bottom-color: color-mix(in srgb, #C084FC 35%, var(--border));
+}
+
+html[data-theme="easter"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(640px 380px at 82% 14%, rgba(192, 132, 252, 0.16), transparent 70%),
+    radial-gradient(580px 340px at 16% 88%, rgba(94, 234, 212, 0.12), transparent 70%);
+}
+
+html[data-theme="easter"] .card:nth-child(3n+1)::after {
+  -webkit-mask-image: url('/static/seasonal/egg.svg');
+  mask-image: url('/static/seasonal/egg.svg');
+}
+html[data-theme="easter"] .card:nth-child(3n+2)::after {
+  -webkit-mask-image: url('/static/seasonal/rabbit.svg');
+  mask-image: url('/static/seasonal/rabbit.svg');
+}
+html[data-theme="easter"] .card:nth-child(3n+3)::after {
+  -webkit-mask-image: url('/static/seasonal/carrot.svg');
+  mask-image: url('/static/seasonal/carrot.svg');
+}
+
+/* --- CARNIVAL --- */
+html[data-theme="carnival"] {
+  --seasonal-primary-icon: url('/static/seasonal/mask.svg');
+  --seasonal-badge-pt: "Carnaval";
+  --seasonal-badge-en: "Carnival";
+}
+
+html[data-theme="carnival"] .header,
+html.tv-mode[data-theme="carnival"] .stats-bar {
+  border-image: linear-gradient(90deg, #FACC15, #2DD4BF, #F43F5E, #A855F7) 1;
+}
+
+html[data-theme="carnival"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(580px 360px at 14% 10%, rgba(250, 204, 21, 0.14), transparent 70%),
+    radial-gradient(600px 380px at 86% 14%, rgba(45, 212, 191, 0.14), transparent 70%),
+    radial-gradient(620px 320px at 50% 95%, rgba(244, 63, 94, 0.10), transparent 70%);
+}
+
+html[data-theme="carnival"] .card:nth-child(2n+1)::after {
+  -webkit-mask-image: url('/static/seasonal/mask.svg');
+  mask-image: url('/static/seasonal/mask.svg');
+}
+html[data-theme="carnival"] .card:nth-child(2n+2)::after {
+  -webkit-mask-image: url('/static/seasonal/confetti.svg');
+  mask-image: url('/static/seasonal/confetti.svg');
+}
+
+/* --- FESTA JUNINA --- */
+html[data-theme="junina"] {
+  --seasonal-primary-icon: url('/static/seasonal/campfire.svg');
+  --seasonal-badge-pt: "São João";
+  --seasonal-badge-en: "Junina";
+}
+
+html[data-theme="junina"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(720px 340px at 50% 100%, rgba(251, 146, 60, 0.16), transparent 70%),
+    radial-gradient(520px 260px at 16% 14%, rgba(250, 204, 21, 0.08), transparent 70%);
+}
+
+html[data-theme="junina"] body::after {
+  content: "";
+  position: fixed;
+  top: 56px;
+  left: 0;
+  right: 0;
+  height: 16px;
+  pointer-events: none;
+  z-index: 90;
+  opacity: 0.85;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='16' viewBox='0 0 120 16'%3E%3Cpath d='M0 1 Q60 5 120 1' stroke='%2399826E' stroke-width='1' fill='none'/%3E%3Cpolygon points='8,2 21,3 14.5,14' fill='%23FB923C'/%3E%3Cpolygon points='38,3 51,4 44.5,15' fill='%23FACC15'/%3E%3Cpolygon points='68,4 81,3 74.5,15' fill='%234ADE80'/%3E%3Cpolygon points='98,3 111,2 104.5,14' fill='%23F87171'/%3E%3C/svg%3E");
+  background-repeat: repeat-x;
+  animation: seasonal-bunting-sway 4.5s ease-in-out infinite;
+}
+
+html.tv-mode[data-theme="junina"] body::after {
+  top: 0;
+  height: 13px;
+}
+
+html[data-theme="junina"] .card:nth-child(2n+1)::after {
+  -webkit-mask-image: url('/static/seasonal/campfire.svg');
+  mask-image: url('/static/seasonal/campfire.svg');
+}
+html[data-theme="junina"] .card:nth-child(2n+2)::after {
+  -webkit-mask-image: url('/static/seasonal/lantern.svg');
+  mask-image: url('/static/seasonal/lantern.svg');
+}
+
+/* --- BRAZIL (Semana da Pátria) --- */
+html[data-theme="brazil"] {
+  --seasonal-primary-icon: url('/static/seasonal/stars.svg');
+  --seasonal-badge-pt: "Brasil";
+  --seasonal-badge-en: "Brazil";
+}
+
+html[data-theme="brazil"] .header,
+html.tv-mode[data-theme="brazil"] .stats-bar {
+  border-image: linear-gradient(90deg, #22C55E, #FACC15, #38BDF8) 1;
+}
+
+html[data-theme="brazil"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(640px 360px at 85% 15%, rgba(250, 204, 21, 0.14), transparent 70%),
+    radial-gradient(640px 360px at 15% 88%, rgba(34, 197, 94, 0.14), transparent 70%);
+}
+
+html[data-theme="brazil"] .card:nth-child(2n+1)::after {
+  -webkit-mask-image: url('/static/seasonal/stars.svg');
+  mask-image: url('/static/seasonal/stars.svg');
+}
+html[data-theme="brazil"] .card:nth-child(2n+2)::after {
+  -webkit-mask-image: url('/static/seasonal/leaf.svg');
+  mask-image: url('/static/seasonal/leaf.svg');
+}
+
+/* --- SPRING (Primavera dos Ipês) --- */
+html[data-theme="spring"] {
+  --seasonal-primary-icon: url('/static/seasonal/flower.svg');
+  --seasonal-badge-pt: "Primavera";
+  --seasonal-badge-en: "Spring";
+}
+
+html[data-theme="spring"] .header,
+html.tv-mode[data-theme="spring"] .stats-bar {
+  border-bottom-color: color-mix(in srgb, #F472B6 38%, var(--border));
+}
+
+html[data-theme="spring"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(620px 360px at 85% 15%, rgba(244, 114, 182, 0.14), transparent 70%),
+    radial-gradient(600px 340px at 15% 88%, rgba(52, 211, 153, 0.12), transparent 70%);
+}
+
+html[data-theme="spring"] .card:nth-child(2n+1)::after {
+  -webkit-mask-image: url('/static/seasonal/flower.svg');
+  mask-image: url('/static/seasonal/flower.svg');
+}
+html[data-theme="spring"] .card:nth-child(2n+2)::after {
+  -webkit-mask-image: url('/static/seasonal/leaf.svg');
+  mask-image: url('/static/seasonal/leaf.svg');
+}
+
+/* --- NEW YEAR --- */
+html[data-theme="newyear"] {
+  --seasonal-primary-icon: url('/static/seasonal/sparkles.svg');
+  --seasonal-badge-pt: "Ano Novo";
+  --seasonal-badge-en: "New Year";
+}
+
+html[data-theme="newyear"] .header,
+html.tv-mode[data-theme="newyear"] .stats-bar {
+  border-bottom-color: color-mix(in srgb, #EAB308 40%, var(--border));
+}
+
+html[data-theme="newyear"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(620px 360px at 18% 12%, rgba(234, 179, 8, 0.14), transparent 70%),
+    radial-gradient(620px 360px at 84% 16%, rgba(52, 211, 153, 0.10), transparent 70%);
+  animation: seasonal-ambient-pulse 6s ease-in-out infinite;
+}
+
+html[data-theme="newyear"] .card:nth-child(2n+1)::after {
+  -webkit-mask-image: url('/static/seasonal/sparkles.svg');
+  mask-image: url('/static/seasonal/sparkles.svg');
+}
+html[data-theme="newyear"] .card:nth-child(2n+2)::after {
+  -webkit-mask-image: url('/static/seasonal/champagne.svg');
+  mask-image: url('/static/seasonal/champagne.svg');
+}

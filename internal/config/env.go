@@ -114,6 +114,15 @@ func (c *Config) applyEnvOverrides() {
 			c.Server.SantaEasterEgg = b
 		}
 	}
+	if seasonal := os.Getenv("ARGUS_SEASONAL_THEMES"); seasonal != "" {
+		if b, err := strconv.ParseBool(seasonal); err == nil {
+			c.Server.SeasonalThemes = b
+		}
+	} else if seasonal := os.Getenv("ARGUS_SERVER_SEASONAL_THEMES"); seasonal != "" {
+		if b, err := strconv.ParseBool(seasonal); err == nil {
+			c.Server.SeasonalThemes = b
+		}
+	}
 
 	if storagePath := os.Getenv("ARGUS_STORAGE_PATH"); storagePath != "" {
 		c.Storage.Path = storagePath

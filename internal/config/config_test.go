@@ -246,6 +246,25 @@ func TestSantaEasterEggDefaultAndEnvOverride(t *testing.T) {
 	}
 }
 
+func TestSeasonalThemesDefaultAndEnvOverride(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.Server.SeasonalThemes {
+		t.Fatalf("expected Server.SeasonalThemes default to be true")
+	}
+
+	t.Setenv("ARGUS_SEASONAL_THEMES", "false")
+	cfg.applyEnvOverrides()
+	if cfg.Server.SeasonalThemes {
+		t.Fatalf("expected ARGUS_SEASONAL_THEMES=false to disable SeasonalThemes")
+	}
+
+	t.Setenv("ARGUS_SEASONAL_THEMES", "true")
+	cfg.applyEnvOverrides()
+	if !cfg.Server.SeasonalThemes {
+		t.Fatalf("expected ARGUS_SEASONAL_THEMES=true to enable SeasonalThemes")
+	}
+}
+
 func TestTimezoneConfigAndEnvOverride(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Systems = []SystemConfig{{ID: "sys1", URL: "https://example.com"}}

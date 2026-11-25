@@ -84,6 +84,7 @@ type ServerConfig struct {
 	Timezone       string     `yaml:"timezone"`
 	Auth           AuthConfig `yaml:"auth"`
 	SantaEasterEgg bool       `yaml:"santa_easter_egg"`
+	SeasonalThemes bool       `yaml:"seasonal_themes"`
 }
 
 // StorageConfig holds SQLite storage parameters and retention settings.
@@ -217,6 +218,7 @@ func DefaultConfig() *Config {
 			Addr:           ":8080",
 			Lang:           i18n.LangPT,
 			SantaEasterEgg: false,
+			SeasonalThemes: true,
 		},
 		Storage: StorageConfig{
 			Path:            "./data/argus.db",

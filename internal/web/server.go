@@ -246,6 +246,15 @@ func (s *Server) santaEasterEggEnabled() bool {
 	return s.cfg.Server.SantaEasterEgg
 }
 
+func (s *Server) seasonalThemesEnabled() bool {
+	s.cfgMu.RLock()
+	defer s.cfgMu.RUnlock()
+	if s.cfg == nil {
+		return true
+	}
+	return s.cfg.Server.SeasonalThemes
+}
+
 func (s *Server) defaultMessages() i18n.Messages {
 	s.cfgMu.RLock()
 	var lang string
